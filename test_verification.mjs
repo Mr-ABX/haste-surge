@@ -192,6 +192,61 @@ assert(typeof audio.playSpark === 'function', 'audio.playSpark must exist');
 assert(typeof audio.playObjectiveSuccess === 'function', 'audio.playObjectiveSuccess must exist');
 assert(typeof audio.setMenuMode === 'function', 'audio.setMenuMode must exist');
 assert(typeof audio.setMuted === 'function', 'audio.setMuted must exist');
+assert(typeof audio.setSlowMo === 'function', 'audio.setSlowMo must exist');
+assert(typeof audio.playSlowMoStart === 'function', 'audio.playSlowMoStart must exist');
+assert(typeof audio.playSlowMoEnd === 'function', 'audio.playSlowMoEnd must exist');
 console.log('✓ Test 5 passed: SoundEngine API surface intact.');
+
+// 6. Verify Slow-Mo Time Dilation System
+console.log('Test 6: Slow-Mo Time Dilation Ability System...');
+player.reset(world);
+assert(player.slowMo.active === false, 'Slow-Mo should start inactive');
+assert(player.slowMo.cooldown === 0, 'Slow-Mo cooldown should start at 0');
+assert(player.slowMo.timeScale === 1.0, 'Initial timeScale must be 1.0');
+
+// Trigger Slow-Mo
+const triggered = player.triggerSlowMo();
+assert(triggered === true, 'player.triggerSlowMo() must return true when ready');
+assert(player.slowMo.active === true, 'player.slowMo.active must be true');
+assert(player.slowMo.timer === player.slowMo.duration, 'player.slowMo.timer must equal duration (3.5s)');
+assert(player.slowMo.targetTimeScale === 0.30, 'Target timeScale must be 0.30x (slow motion)');
+
+// Update slow-mo over 1 second in realDt
+for (let f = 0; f < 60; f++) {
+  player.updateSlowMo(1/60);
+}
+assert(player.slowMo.timer < 3.0, 'Timer must decrement over time');
+assert(player.slowMo.timeScale >= 0.25 && player.slowMo.timeScale <= 0.35, `timeScale (${player.slowMo.timeScale.toFixed(2)}) must be slowed to 0.25x-0.35x`);
+
+// Run until duration expires (remaining ~2.5s)
+for (let f = 0; f < 180; f++) {
+  player.updateSlowMo(1/60);
+}
+assert(player.slowMo.active === false, 'Slow-Mo must deactivate when timer expires');
+assert(player.slowMo.cooldown > 0, 'Slow-Mo must enter cooldown after expiration');
+assert(player.slowMo.targetTimeScale === 1.0, 'Target timeScale must return to 1.0');
+
+// Verify trigger is blocked during cooldown
+const blockedTrigger = player.triggerSlowMo();
+assert(blockedTrigger === false, 'Trigger must be rejected while on cooldown');
+
+// Verify early toggle cancellation
+player.slowMo.cooldown = 0;
+player.triggerSlowMo();
+assert(player.slowMo.active === true, 'Should activate again');
+player.triggerSlowMo(); // toggle off early
+assert(player.slowMo.active === false, 'Second trigger must cancel early');
+assert(player.slowMo.cooldown > 0, 'Early cancellation must initiate cooldown');
+
+// Verify reset cleans up slow-mo
+player.reset(world);
+assert(player.slowMo.active === false, 'Reset must deactivate slow-mo');
+assert(player.slowMo.cooldown === 0, 'Reset must clear cooldown');
+assert(player.slowMo.timeScale === 1.0, 'Reset must restore timeScale to 1.0');
+
+// Verify input.slowmo in player.update()
+player.update(1/60, { slowmo: true }, world, audio, null);
+assert(player.slowMo.active === true, 'input.slowmo = true must activate slow-mo');
+console.log('✓ Test 6 passed: Slow-Mo Time Dilation System fully verified.');
 
 console.log('ALL VERIFICATION TESTS COMPLETED SUCCESSFULLY WITH 100% PASS RATE!');

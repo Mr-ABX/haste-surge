@@ -237,23 +237,98 @@
     .item-slot svg { width: 100%; height: 100%; }
 
     /* Right-side Square Active Ability Box (Matches Screenshot 1 & 2) */
+    /* Active Ability Slots (Left: Slow-Mo Q / Right: Board Surge E) */
     .ability-box {
       position: absolute; right: -58px; bottom: 30px;
-      width: 38px; height: 38px;
-      background: rgba(28, 36, 44, 0.62);
+      width: 40px; height: 40px;
+      background: rgba(28, 36, 44, 0.72);
       border: 1.5px solid rgba(255, 255, 255, 0.88);
       display: flex; align-items: center; justify-content: center;
       padding: 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      pointer-events: auto;
+      transition: all 0.16s ease;
+    }
+    .ability-box:hover {
+      transform: translateY(-2px);
+      background: rgba(42, 54, 70, 0.85);
+    }
+    .ability-box.slowmo-box {
+      right: auto; left: -58px;
+    }
+    .ability-box.slowmo-box.ready {
+      border-color: #26f0ff;
+      box-shadow: 0 0 10px rgba(38, 240, 255, 0.35);
+    }
+    .ability-box.slowmo-box.ready svg {
+      stroke: #26f0ff;
+    }
+    .ability-box.slowmo-box.active {
+      border-color: #26f0ff;
+      background: rgba(38, 240, 255, 0.28);
+      box-shadow: 0 0 18px rgba(38, 240, 255, 0.85), inset 0 0 10px rgba(38, 240, 255, 0.5);
+      animation: slowmo-pulse 0.75s infinite alternate ease-in-out;
+    }
+    .ability-box.slowmo-box.active svg {
+      stroke: #ffffff;
+      filter: drop-shadow(0 0 6px #26f0ff);
+    }
+    .ability-box.slowmo-box.cooldown {
+      border-color: rgba(255, 255, 255, 0.25);
+      background: rgba(16, 20, 28, 0.8);
+      opacity: 0.72;
+    }
+    .ability-box.slowmo-box.cooldown svg {
+      stroke: rgba(255, 255, 255, 0.35);
+    }
+    @keyframes slowmo-pulse {
+      0% { transform: scale(1); box-shadow: 0 0 12px rgba(38, 240, 255, 0.7); }
+      100% { transform: scale(1.08); box-shadow: 0 0 22px rgba(38, 240, 255, 1); }
     }
     .ability-prompt {
-      position: absolute; top: -15px; left: 50%; transform: translateX(-50%);
-      width: 10px; height: 13px;
-      border: 1.2px solid rgba(255,255,255,0.85);
-      border-radius: 4px;
+      position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+      font-size: 9px; font-weight: 900; line-height: 1;
+      padding: 1.5px 5px;
+      border-radius: 3px;
+      background: rgba(16, 24, 38, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      color: #fff;
+      font-family: 'Inter', sans-serif;
     }
-    .ability-prompt::before {
-      content: ''; position: absolute; right: 1px; top: 1px;
-      width: 3px; height: 4px; background: #fff;
+    .slowmo-box .ability-prompt {
+      border-color: #26f0ff;
+      color: #26f0ff;
+    }
+    .slowmo-meter-wrap {
+      position: absolute; bottom: -5px; left: 0; right: 0;
+      height: 3px; background: rgba(14, 20, 30, 0.85);
+      border: 0.5px solid rgba(255, 255, 255, 0.2);
+      border-radius: 2px; overflow: hidden;
+    }
+    .slowmo-meter-fill {
+      width: 100%; height: 100%;
+      background: #26f0ff;
+      transition: width 0.04s linear, background 0.2s;
+    }
+    .slowmo-box.cooldown .slowmo-meter-fill {
+      background: #ffaa33;
+    }
+    .slowmo-badge {
+      position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%);
+      font-size: 8px; font-weight: 900; letter-spacing: 0.6px;
+      color: #26f0ff;
+      white-space: nowrap; text-transform: uppercase;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    }
+    .slowmo-box.active .slowmo-badge {
+      color: #ffd447;
+    }
+    .slowmo-box.cooldown .slowmo-badge {
+      color: #ffaa33;
+    }
+    #hud.slowmo-active {
+      box-shadow: inset 0 0 80px rgba(38, 240, 255, 0.24);
     }
     .ability-box svg {
       width: 100%; height: 100%; stroke: #d8c690;
@@ -603,9 +678,23 @@
       <div id="hud-hearts"></div>
       <div id="hud-items"></div>
 
+      <!-- Slow-Mo Time Dilation Slot (Left of bars, symmetrical to Board Surge on right) -->
+      <div class="ability-box slowmo-box ready" id="hud-slowmo-box" title="Time Dilation / Slow-Mo (Press Q or Click)">
+        <div class="ability-prompt">Q</div>
+        <svg class="slowmo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="9"/>
+          <polyline points="12 6 12 12 15 15"/>
+          <path d="M12 2v2M12 20v2M2 12h2M20 12h2" opacity="0.45"/>
+        </svg>
+        <div class="slowmo-meter-wrap">
+          <div class="slowmo-meter-fill" id="hud-slowmo-fill"></div>
+        </div>
+        <div class="slowmo-badge" id="hud-slowmo-badge">READY</div>
+      </div>
+
       <!-- Active Ability Slot (Right of bars) -->
-      <div class="ability-box" title="Courier Board Surge (Right-Click / E / Shift)">
-        <div class="ability-prompt"></div>
+      <div class="ability-box" id="hud-surge-box" title="Courier Board Surge (Right-Click / E / Shift)">
+        <div class="ability-prompt">E</div>
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2">
           <path d="M4 17c4-2 12-2 16 0M6 14l12-6"/>
         </svg>
@@ -669,6 +758,8 @@
         HOP <span class="key-chip">W / ▲</span>
         &nbsp;&bull;&nbsp;
         BOARD SURGE <span class="key-chip">RIGHT CLICK / E</span>
+        &nbsp;&bull;&nbsp;
+        SLOW-MO <span class="key-chip">Q</span>
       </div>
       <div>EVERY LANDING COUNTS</div>
     </div>

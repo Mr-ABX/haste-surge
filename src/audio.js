@@ -13,6 +13,8 @@ export class SoundEngine {
     this.step = 0;
     this.timer = null;
     this.customAudio = null;
+    this.slowMoActive = false;
+    this.slowMoScale = 1.0;
 
     // Consecutive spark pickup combo
     this.sparkIndex = 0;
@@ -140,17 +142,35 @@ export class SoundEngine {
     this.masterFilter.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.2);
   }
 
+  setSlowMo(active, factor = 0.30) {
+    this.slowMoActive = Boolean(active);
+    this.slowMoScale = active ? Math.max(0.2, factor) : 1.0;
+    if (this.customAudio) {
+      this.customAudio.playbackRate = this.slowMoActive ? 0.55 : 1.0;
+    }
+    if (this.ctx && this.masterFilter) {
+      if (this.slowMoActive) {
+        this.masterFilter.frequency.setTargetAtTime(380, this.ctx.currentTime, 0.06);
+        this.masterFilter.Q.setTargetAtTime(2.4, this.ctx.currentTime, 0.06);
+      } else if (!this.inMenu) {
+        this.masterFilter.frequency.setTargetAtTime(3200, this.ctx.currentTime, 0.1);
+        this.masterFilter.Q.setTargetAtTime(0.7, this.ctx.currentTime, 0.1);
+      }
+    }
+  }
+
   startBreakbeat() {
     if (this.timer) clearInterval(this.timer);
     // 174 BPM 16th-note Liquid DnB Sample-Accurate Lookahead Scheduler
-    const stepDuration = 60 / 174 / 4;
+    const baseStepDuration = 60 / 174 / 4;
     let nextStepTime = this.ctx.currentTime + 0.05;
 
     this.timer = setInterval(() => {
       if (!this.ctx || this.muted || !this.playing || this.customAudio) return;
+      const currentStepDuration = baseStepDuration / Math.max(0.25, this.slowMoScale);
       while (nextStepTime < this.ctx.currentTime + 0.12) {
         this._scheduleStep(nextStepTime);
-        nextStepTime += stepDuration;
+        nextStepTime += currentStepDuration;
       }
     }, 25);
   }
@@ -159,19 +179,20 @@ export class SoundEngine {
     const s = this.step % 16;
     const bar = Math.floor(this.step / 16) % this.chords.length;
     const vol = this.inMenu ? 0.42 : 1.0;
+    const pitch = this.slowMoActive ? 0.68 : 1.0;
 
     // KICK: Step 0 & Step 10 (Classic syncopated liquid 2-step)
     if (s === 0 || s === 10) {
-      this._kick(time, vol);
+      this._kick(time, vol, pitch);
     }
 
     // SNARE: Step 4 & Step 12 (Hard 2 and 4 backbeats)
     if (s === 4 || s === 12) {
-      this._snare(time, 1.0 * vol);
+      this._snare(time, 1.0 * vol, false, pitch);
     }
     // GHOST SNARES: Steps 7 & 15 (Liquid breakbeat shuffle)
     if (s === 7 || s === 15) {
-      this._snare(time, 0.22 * vol, true);
+      this._snare(time, 0.22 * vol, true, pitch);
     }
 
     // HI-HATS: Shuffling 16ths
@@ -184,52 +205,68 @@ export class SoundEngine {
 
     // ROLLING REESE SUB-BASS (8th notes)
     if (s % 4 === 0) {
-      const freq = this.bassNotes[bar];
-      this._reeseBass(time, freq, 0.24, 0.18 * vol);
+      const freq = this.bassNotes[bar] * pitch;
+      this._reeseBass(time, freq, this.slowMoActive ? 0.42 : 0.24, 0.18 * vol);
     }
 
     // LUSH ATMOSPHERIC LIQUID CHORD PAD
     if (s === 0 || s === 8) {
-      const chord = this.chords[bar];
-      this._liquidChord(time, chord, 0.65, 0.038 * vol);
+      const chord = this.chords[bar].map((f) => f * pitch);
+      this._liquidChord(time, chord, this.slowMoActive ? 1.1 : 0.65, 0.038 * vol);
     }
 
     // SPARKLE ARPEGGIO ACCENTS
     if (s % 2 === 1 && !this.inMenu) {
       const chord = this.chords[bar];
-      const note = chord[(s + bar) % chord.length];
+      const note = chord[(s + bar) % chord.length] * pitch;
       this._synthPluck(time, note * 1.5, 0.025 * vol);
     }
 
     this.step++;
   }
 
-  updateSpeed(speed, isDiving = false) {
+  updateSpeed(speed, isDiving = false, timeScale = 1.0, isSlowMo = false) {
     if (!this.ctx || !this.windGain || !this.masterFilter) return;
+    this.slowMoActive = Boolean(isSlowMo);
+    this.slowMoScale = Math.max(0.2, timeScale);
+
     const t = Math.max(0, Math.min(1, (speed - 40) / 140));
 
-    // Wind filter responds dynamically to speed
-    this.windFilter.frequency.setTargetAtTime(280 + t * 1800, this.ctx.currentTime, 0.06);
-    this.windGain.gain.setTargetAtTime(this.muted ? 0 : t * 0.16, this.ctx.currentTime, 0.06);
+    // Wind filter responds dynamically to speed and slows down during time dilation
+    const windCutoff = (280 + t * 1800) * (isSlowMo ? 0.55 : 1.0);
+    this.windFilter.frequency.setTargetAtTime(windCutoff, this.ctx.currentTime, 0.06);
+    this.windGain.gain.setTargetAtTime(this.muted ? 0 : t * (isSlowMo ? 0.08 : 0.16), this.ctx.currentTime, 0.06);
 
     // Fast-fall dive high-speed whistling slipstream
-    const whistleVol = isDiving ? 0.18 : 0.0;
+    const whistleVol = isDiving ? (isSlowMo ? 0.09 : 0.18) : 0.0;
     this.diveWhistleGain.gain.setTargetAtTime(this.muted ? 0 : whistleVol, this.ctx.currentTime, 0.05);
 
-    // Dynamic music filter sweeps open at high velocity
-    if (!this.inMenu) {
+    // Dynamic music filter:
+    // If Slow-Mo is active, apply muffled underwater sub-bass resonance filter!
+    if (isSlowMo || timeScale < 0.95) {
+      const subBassCutoff = 340 + Math.max(0, timeScale - 0.3) * 650;
+      this.masterFilter.frequency.setTargetAtTime(subBassCutoff, this.ctx.currentTime, 0.05);
+      this.masterFilter.Q.setTargetAtTime(2.4, this.ctx.currentTime, 0.05);
+      if (this.customAudio) {
+        this.customAudio.playbackRate = 0.55;
+      }
+    } else if (!this.inMenu) {
       const musicCutoff = 1600 + t * 4500;
       this.masterFilter.frequency.setTargetAtTime(musicCutoff, this.ctx.currentTime, 0.08);
+      this.masterFilter.Q.setTargetAtTime(0.7, this.ctx.currentTime, 0.08);
+      if (this.customAudio) {
+        this.customAudio.playbackRate = 1.0;
+      }
     }
   }
 
   // --- SYNTHESIZED SOUND MODULES ---
 
-  _kick(t, volMult = 1) {
+  _kick(t, volMult = 1, pitchMult = 1.0) {
     const osc = this.ctx.createOscillator();
     const g = this.ctx.createGain();
-    osc.frequency.setValueAtTime(155, t);
-    osc.frequency.exponentialRampToValueAtTime(42, t + 0.09);
+    osc.frequency.setValueAtTime(155 * pitchMult, t);
+    osc.frequency.exponentialRampToValueAtTime(42 * pitchMult, t + 0.09);
     g.gain.setValueAtTime(0.28 * volMult, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
     osc.connect(g);
@@ -238,13 +275,13 @@ export class SoundEngine {
     osc.stop(t + 0.13);
   }
 
-  _snare(t, volMult = 1, isGhost = false) {
+  _snare(t, volMult = 1, isGhost = false, pitchMult = 1.0) {
     // Tonal body
     const osc = this.ctx.createOscillator();
     const gOsc = this.ctx.createGain();
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(isGhost ? 180 : 230, t);
-    osc.frequency.exponentialRampToValueAtTime(90, t + 0.06);
+    osc.frequency.setValueAtTime((isGhost ? 180 : 230) * pitchMult, t);
+    osc.frequency.exponentialRampToValueAtTime(90 * pitchMult, t + 0.06);
     gOsc.gain.setValueAtTime(0.14 * volMult, t);
     gOsc.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
     osc.connect(gOsc);
@@ -516,6 +553,56 @@ export class SoundEngine {
       osc.start(t + i * 0.06);
       osc.stop(t + i * 0.06 + 0.3);
     });
+  }
+
+  playSlowMoStart() {
+    if (!this.ctx || this.muted) return;
+    const t = this.ctx.currentTime;
+    // Deep sub-drop time dilation warp
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(240, t);
+    osc.frequency.exponentialRampToValueAtTime(38, t + 0.45);
+    g.gain.setValueAtTime(0.38, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    osc.connect(g);
+    g.connect(this.masterComp);
+    osc.start(t);
+    osc.stop(t + 0.52);
+
+    // Downward resonant noise sweep
+    const dur = 0.4;
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = this.noiseBuffer || this.ctx.createBuffer(1, 100, this.ctx.sampleRate);
+    const flt = this.ctx.createBiquadFilter();
+    flt.type = 'lowpass';
+    flt.frequency.setValueAtTime(1400, t);
+    flt.frequency.exponentialRampToValueAtTime(160, t + dur);
+    const gNoise = this.ctx.createGain();
+    gNoise.gain.setValueAtTime(0.24, t);
+    gNoise.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    noise.connect(flt);
+    flt.connect(gNoise);
+    gNoise.connect(this.masterComp);
+    noise.start(t, Math.random() * 0.5, dur);
+  }
+
+  playSlowMoEnd() {
+    if (!this.ctx || this.muted) return;
+    const t = this.ctx.currentTime;
+    // Ascending warp snap
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(60, t);
+    osc.frequency.exponentialRampToValueAtTime(340, t + 0.22);
+    g.gain.setValueAtTime(0.24, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    osc.connect(g);
+    g.connect(this.masterComp);
+    osc.start(t);
+    osc.stop(t + 0.26);
   }
 
   playHit() {

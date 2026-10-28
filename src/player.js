@@ -31,6 +31,16 @@ export class Player {
     this.spinAngle = 0;
     this.boardActive = 0;
 
+    this.slowMo = {
+      active: false,
+      timer: 0,
+      duration: 3.5,
+      cooldown: 0,
+      maxCooldown: 6.5,
+      timeScale: 1.0,
+      targetTimeScale: 1.0,
+    };
+
     this.stats = {
       topSpeedMult: 1,
       boostPower: 1,
@@ -325,13 +335,72 @@ export class Player {
     this.hp = this.maxHp;
     this.invuln = 0;
     this.boardActive = 0;
+    this.slowMo.active = false;
+    this.slowMo.timer = 0;
+    this.slowMo.cooldown = 0;
+    this.slowMo.timeScale = 1.0;
+    this.slowMo.targetTimeScale = 1.0;
     this.trails.forEach((t) => (t.pts.length = 0));
     this.footPuffs.forEach((p) => { p.life = 0; p.mesh.visible = false; });
+  }
+
+  triggerSlowMo() {
+    if (this.slowMo.active) {
+      this.deactivateSlowMo();
+      return false;
+    }
+    if (this.slowMo.cooldown <= 0) {
+      this.slowMo.active = true;
+      this.slowMo.timer = this.slowMo.duration;
+      this.slowMo.targetTimeScale = 0.30;
+      return true;
+    }
+    return false;
+  }
+
+  deactivateSlowMo() {
+    if (this.slowMo.active) {
+      this.slowMo.active = false;
+      this.slowMo.timer = 0;
+      this.slowMo.cooldown = this.slowMo.maxCooldown;
+      this.slowMo.targetTimeScale = 1.0;
+      return true;
+    }
+    return false;
+  }
+
+  updateSlowMo(realDt) {
+    if (this.slowMo.active) {
+      this.slowMo.timer = Math.max(0, this.slowMo.timer - realDt);
+      if (this.slowMo.timer <= 0) {
+        this.slowMo.active = false;
+        this.slowMo.cooldown = this.slowMo.maxCooldown;
+        this.slowMo.targetTimeScale = 1.0;
+      }
+    } else if (this.slowMo.cooldown > 0) {
+      this.slowMo.cooldown = Math.max(0, this.slowMo.cooldown - realDt);
+    }
+    this.slowMo.timeScale = THREE.MathUtils.lerp(
+      this.slowMo.timeScale,
+      this.slowMo.targetTimeScale,
+      1 - Math.exp(-14 * realDt)
+    );
+    return this.slowMo.timeScale;
   }
 
   update(dt, input, world, audio, onLanding) {
     if (this.invuln > 0) this.invuln = Math.max(0, this.invuln - dt);
     if (this.boardActive > 0) this.boardActive = Math.max(0, this.boardActive - dt);
+
+    if (input.slowmo) {
+      const activated = this.triggerSlowMo();
+      if (activated) {
+        audio?.playSlowMoStart?.();
+      } else {
+        audio?.playSlowMoEnd?.();
+      }
+      input.slowmo = false;
+    }
 
     // FIXED STEERING:
     // Camera looks from -Z toward +Z (+Y up), so Screen Left is +X and Screen Right is -X!

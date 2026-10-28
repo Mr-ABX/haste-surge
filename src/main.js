@@ -62,6 +62,14 @@ window.addEventListener('keydown', (e) => {
     input.forward = true;
   }
   if (k === 'KeyE' || k === 'ShiftLeft' || k === 'ShiftRight') input.boost = true;
+  if (k === 'KeyQ' && state === 'playing') {
+    const turnedOn = player.triggerSlowMo();
+    if (turnedOn) {
+      audio.playSlowMoStart();
+    } else {
+      audio.playSlowMoEnd();
+    }
+  }
   if (k === 'Escape' && state === 'playing') openMenu();
 });
 
@@ -138,6 +146,10 @@ const elMenuModal = document.getElementById('menu-modal');
 const elShopModal = document.getElementById('shop-modal');
 const elShopGrid = document.getElementById('shop-grid');
 const elShopSparks = document.getElementById('shop-sparks');
+const elSlowMoBox = document.getElementById('hud-slowmo-box');
+const elSlowMoFill = document.getElementById('hud-slowmo-fill');
+const elSlowMoBadge = document.getElementById('hud-slowmo-badge');
+const elSurgeBox = document.getElementById('hud-surge-box');
 
 // Tutorial Elements
 const elTutorialHud = document.getElementById('tutorial-hud');
@@ -212,6 +224,8 @@ function startTutorial() {
   audio.init();
   audio.playing = true;
   audio.setMenuMode(false);
+  audio.setSlowMo(false, 1.0);
+  elHud.classList.remove('slowmo-active');
 
   elMenuModal.style.display = 'none';
   elShopModal.style.display = 'none';
@@ -238,6 +252,8 @@ function loadStage(index) {
   const seed = 14.2 + stageIdx * 7.3;
 
   audio.setMenuMode(false);
+  audio.setSlowMo(false, 1.0);
+  elHud.classList.remove('slowmo-active');
   elTutorialHud.classList.add('hidden');
   elTutorialModal.classList.add('hidden');
 
@@ -279,6 +295,8 @@ function updateHudStatic() {
 function openMenu() {
   state = 'menu';
   audio.setMenuMode(true);
+  audio.setSlowMo(false, 1.0);
+  elHud.classList.remove('slowmo-active');
   elHud.classList.add('hidden');
   elShopModal.style.display = 'none';
   elTutorialModal.classList.add('hidden');
@@ -288,6 +306,8 @@ function openMenu() {
     loadStage(0);
     state = 'menu';
     audio.setMenuMode(true);
+    audio.setSlowMo(false, 1.0);
+    elHud.classList.remove('slowmo-active');
     elHud.classList.add('hidden');
     elMenuModal.style.display = 'flex';
   }
@@ -296,6 +316,8 @@ function openMenu() {
 function openShop() {
   state = 'shop';
   audio.setMenuMode(true);
+  audio.setSlowMo(false, 1.0);
+  elHud.classList.remove('slowmo-active');
   elHud.classList.add('hidden');
   elShopModal.style.display = 'flex';
   renderShopItems();
@@ -376,6 +398,30 @@ document.getElementById('btn-mute').addEventListener('click', (e) => {
   e.currentTarget.textContent = audio.muted ? 'OFF' : 'SND';
 });
 
+if (elSlowMoBox) {
+  elSlowMoBox.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (state !== 'playing') return;
+    if (!audio.ctx) audio.init();
+    const turnedOn = player.triggerSlowMo();
+    if (turnedOn) {
+      audio.playSlowMoStart();
+    } else {
+      audio.playSlowMoEnd();
+    }
+  });
+}
+
+if (elSurgeBox) {
+  elSurgeBox.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (state !== 'playing') return;
+    if (!audio.ctx) audio.init();
+    input.boost = true;
+    setTimeout(() => { input.boost = false; }, 140);
+  });
+}
+
 document.getElementById('lyria-file').addEventListener('change', (e) => {
   const file = e.target.files?.[0];
   if (file) {
@@ -383,33 +429,87 @@ document.getElementById('lyria-file').addEventListener('change', (e) => {
   }
 });
 
-// Dynamic Peripheral Speed Lines & Wind Tunnel (Matches Haste High-Speed Aesthetic)
-function drawSpeedLines(speed, isDiving = false) {
+// Dynamic Peripheral Speed Lines, Wind Tunnel & Slow-Mo Chrono Distortion
+function drawSpeedLines(speed, isDiving = false, timeScale = 1.0, isSlowMo = false) {
   fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
-  if (speed < 76 && !isDiving) return;
-  const intensity = Math.min(1, Math.max(0, (speed - 76) / 85));
   const cx = fxCanvas.width * 0.5;
   const cy = fxCanvas.height * 0.5;
   const maxR = Math.hypot(cx, cy);
+  const now = performance.now();
+
+  // 1. Slow-Mo Visual Feedback: Vignette & Expanding Time Ripples
+  if (isSlowMo || timeScale < 0.98) {
+    const slowMoIntensity = Math.min(1, Math.max(0, (1 - timeScale) / 0.7));
+    fxCtx.save();
+
+    // Subtle dark cyan edge vignette
+    const vig = fxCtx.createRadialGradient(cx, cy, maxR * 0.28, cx, cy, maxR * 0.98);
+    vig.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    vig.addColorStop(0.72, `rgba(16, 28, 48, ${0.30 * slowMoIntensity})`);
+    vig.addColorStop(1, `rgba(38, 240, 255, ${0.25 * slowMoIntensity})`);
+    fxCtx.fillStyle = vig;
+    fxCtx.fillRect(0, 0, fxCanvas.width, fxCanvas.height);
+
+    // Expanding concentric time dilation ripple rings
+    const rippleBase = (now * 0.0009) % 1;
+    for (let r = 0; r < 3; r++) {
+      const p = (rippleBase + r / 3) % 1;
+      const radius = maxR * (0.08 + p * 0.72);
+      const alpha = (1 - p) * 0.22 * slowMoIntensity;
+      fxCtx.beginPath();
+      fxCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+      fxCtx.strokeStyle = `rgba(38, 240, 255, ${alpha})`;
+      fxCtx.lineWidth = 1.8 * (1 - p) + 0.5;
+      fxCtx.stroke();
+    }
+    fxCtx.restore();
+  }
+
+  // 2. High-Speed Peripheral Speed Lines with Chromatic Aberration
+  if (speed < 76 && !isDiving && !isSlowMo) return;
+  const intensity = Math.min(1, Math.max(0, (speed - 76) / 85));
 
   fxCtx.save();
   const alpha = 0.16 + intensity * 0.38 + (isDiving ? 0.18 : 0);
-  fxCtx.strokeStyle = speed > 140
-    ? `rgba(38, 240, 255, ${alpha})`
-    : `rgba(255, 255, 255, ${alpha})`;
-  fxCtx.lineWidth = 1.3 + intensity * 1.6;
   const count = Math.floor(24 + intensity * 42 + (isDiving ? 20 : 0));
-  const t = performance.now() * 0.024;
+  const t = now * 0.024;
 
   for (let i = 0; i < count; i++) {
     const a = (i / count) * Math.PI * 2 + Math.sin(t + i * 1.7) * 0.035;
     const innerMin = isDiving ? 0.35 : 0.54;
     const r0 = maxR * (innerMin + ((i * 19) % 10) * 0.025 - intensity * 0.12);
     const r1 = maxR * 1.04;
-    fxCtx.beginPath();
-    fxCtx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
-    fxCtx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
-    fxCtx.stroke();
+
+    const x0 = cx + Math.cos(a) * r0;
+    const y0 = cy + Math.sin(a) * r0;
+    const x1 = cx + Math.cos(a) * r1;
+    const y1 = cy + Math.sin(a) * r1;
+
+    if (isSlowMo) {
+      // Chromatic Aberration Fringe (split into Cyan & Magenta)
+      fxCtx.lineWidth = 1.3;
+      // Cyan channel (-2px)
+      fxCtx.strokeStyle = `rgba(38, 240, 255, ${alpha * 0.8})`;
+      fxCtx.beginPath();
+      fxCtx.moveTo(x0 - 2, y0);
+      fxCtx.lineTo(x1 - 2, y1);
+      fxCtx.stroke();
+      // Magenta channel (+2px)
+      fxCtx.strokeStyle = `rgba(255, 60, 140, ${alpha * 0.6})`;
+      fxCtx.beginPath();
+      fxCtx.moveTo(x0 + 2, y0);
+      fxCtx.lineTo(x1 + 2, y1);
+      fxCtx.stroke();
+    } else {
+      fxCtx.strokeStyle = speed > 140
+        ? `rgba(38, 240, 255, ${alpha})`
+        : `rgba(255, 255, 255, ${alpha})`;
+      fxCtx.lineWidth = 1.3 + intensity * 1.6;
+      fxCtx.beginPath();
+      fxCtx.moveTo(x0, y0);
+      fxCtx.lineTo(x1, y1);
+      fxCtx.stroke();
+    }
   }
   fxCtx.restore();
 }
@@ -421,13 +521,20 @@ state = 'menu';
 let lastTime = performance.now();
 function animate(now) {
   requestAnimationFrame(animate);
-  const dt = Math.min(0.05, (now - lastTime) / 1000);
+  const realDt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
+
+  const wasSlowMo = player.slowMo.active;
+  const timeScale = state === 'playing' ? player.updateSlowMo(realDt) : 1.0;
+  if (wasSlowMo && !player.slowMo.active && state === 'playing') {
+    audio.playSlowMoEnd();
+  }
+  const simDt = realDt * timeScale;
 
   const cfg = isTutorial ? TUTORIAL_STAGE : SHARD_CAMPAIGN[stageIdx];
 
   if (state === 'playing') {
-    player.update(dt, input, world, audio, (grade, col, boost) => {
+    player.update(simDt, input, world, audio, (grade, col, boost) => {
       lastLandingGrade = grade;
       const boostText = boost > 0 ? ` +${Math.round(boost)} m/s` : boost < 0 ? ` ${Math.round(boost)} m/s` : '';
       showCallout(`${grade.toUpperCase()}${boostText}`, col);
@@ -448,7 +555,7 @@ function animate(now) {
     }
 
     if (recentSparkTimer > 0) {
-      recentSparkTimer -= dt;
+      recentSparkTimer -= realDt;
       elRecentSparks.style.opacity = '1';
       elRecentSparks.textContent = `+${recentSparks}`;
     } else {
@@ -457,12 +564,12 @@ function animate(now) {
     }
 
     if (!isTutorial) {
-      encounters.update(dt, player, audio, (msg, col) => {
+      encounters.update(simDt, player, audio, (msg, col) => {
         showCallout(msg, col);
         updateHudStatic();
         if (msg === 'Bad') camShake = 0.45;
       });
-      wallZ = Math.max(wallZ + cfg.wallSpeed * dt, player.pos.z - 260);
+      wallZ = Math.max(wallZ + cfg.wallSpeed * simDt, player.pos.z - 260);
     } else {
       wallZ = -9999;
     }
@@ -524,11 +631,11 @@ function animate(now) {
       }
     }
 
-    audio.updateSpeed(player.speed, player.diving);
+    audio.updateSpeed(player.speed, player.diving, timeScale, player.slowMo.active);
 
     // High-Speed Dynamic Camera & FOV Warp
     const targetFov = THREE.MathUtils.clamp(70 + (player.speed - 50) * 0.44, 70, 118);
-    camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 1 - Math.exp(-8 * dt));
+    camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 1 - Math.exp(-8 * realDt));
     camera.updateProjectionMatrix();
 
     const camDist = 10.5 + Math.min(player.speed * 0.022, 4.0);
@@ -540,24 +647,24 @@ function animate(now) {
     );
 
     if (camShake > 0) {
-      camShake = Math.max(0, camShake - dt);
+      camShake = Math.max(0, camShake - realDt);
       desiredCam.x += (Math.random() - 0.5) * camShake * 3.5;
       desiredCam.y += (Math.random() - 0.5) * camShake * 3.5;
     }
 
-    camera.position.lerp(desiredCam, 1 - Math.exp(-15 * dt));
+    camera.position.lerp(desiredCam, 1 - Math.exp(-15 * realDt));
     camera.lookAt(player.pos.x, player.pos.y + 2.0, player.pos.z + 28);
   } else {
     // Cinematic Live 3D Title Screen Camera showcasing Zoe gliding through the Verdant Expanse
     player.speed = 88;
     player.grounded = false;
     player.diving = false;
-    player.pos.z += 48 * dt;
+    player.pos.z += 48 * realDt;
     if (player.pos.z > 1350) player.pos.z = 80;
 
     player.pos.x = world.pathX(player.pos.z) + Math.sin(now * 0.0008) * 16;
     player.pos.y = world.h(player.pos.x, player.pos.z) + 6.0 + Math.cos(now * 0.0014) * 2.5;
-    player._animateZoe(dt, -0.08);
+    player._animateZoe(realDt, -0.08);
     player._updateTrails();
 
     wallZ = player.pos.z - 300;
@@ -576,7 +683,7 @@ function animate(now) {
     camera.lookAt(player.pos.x + 0.8, player.pos.y + 1.2, player.pos.z);
   }
 
-  world.update(player.pos, dt, camera);
+  world.update(player.pos, simDt, camera);
 
   // Update HUD Speedometer with dynamic heat styling
   const roundedSpeed = Math.round(player.speed);
@@ -600,12 +707,43 @@ function animate(now) {
     elBossHpFill.style.width = `${(encounters.bossHp / encounters.bossMaxHp) * 100}%`;
   }
 
+  // Update Active Ability Indicator: Slow-Mo Chrono Slot
+  if (elSlowMoBox && elSlowMoFill && elSlowMoBadge) {
+    if (player.slowMo.active) {
+      elHud.classList.add('slowmo-active');
+      elSlowMoBox.className = 'ability-box slowmo-box active';
+      const durPct = THREE.MathUtils.clamp((player.slowMo.timer / player.slowMo.duration) * 100, 0, 100);
+      elSlowMoFill.style.width = `${durPct}%`;
+      elSlowMoBadge.textContent = `${player.slowMo.timer.toFixed(1)}s`;
+    } else if (player.slowMo.cooldown > 0) {
+      elHud.classList.remove('slowmo-active');
+      elSlowMoBox.className = 'ability-box slowmo-box cooldown';
+      const coolPct = THREE.MathUtils.clamp(
+        ((player.slowMo.maxCooldown - player.slowMo.cooldown) / player.slowMo.maxCooldown) * 100,
+        0,
+        100
+      );
+      elSlowMoFill.style.width = `${coolPct}%`;
+      elSlowMoBadge.textContent = `${player.slowMo.cooldown.toFixed(1)}s`;
+    } else {
+      elHud.classList.remove('slowmo-active');
+      elSlowMoBox.className = 'ability-box slowmo-box ready';
+      elSlowMoFill.style.width = '100%';
+      elSlowMoBadge.textContent = 'READY';
+    }
+  }
+
   if (calloutTimer > 0) {
-    calloutTimer -= dt;
+    calloutTimer -= realDt;
     if (calloutTimer <= 0) elCallout.style.opacity = '0';
   }
 
-  drawSpeedLines(state === 'playing' ? player.speed : 0, state === 'playing' && player.diving);
+  drawSpeedLines(
+    state === 'playing' ? player.speed : 0,
+    state === 'playing' && player.diving,
+    timeScale,
+    state === 'playing' && player.slowMo.active
+  );
   renderer.render(scene, camera);
 }
 
