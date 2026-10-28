@@ -62,11 +62,12 @@ window.addEventListener('keydown', (e) => {
     input.forward = true;
   }
   if (k === 'KeyE' || k === 'ShiftLeft' || k === 'ShiftRight') input.boost = true;
-  if (k === 'KeyQ' && state === 'playing') {
+  if ((k === 'KeyQ' || e.key === 'q' || e.key === 'Q') && state === 'playing') {
+    const wasActive = player.slowMo.active;
     const turnedOn = player.triggerSlowMo();
     if (turnedOn) {
       audio.playSlowMoStart();
-    } else {
+    } else if (wasActive) {
       audio.playSlowMoEnd();
     }
   }
@@ -91,7 +92,7 @@ window.addEventListener('keyup', (e) => {
 window.addEventListener('mousedown', (e) => {
   if (!audio.ctx) audio.init();
   if (state !== 'playing') return;
-  if (e.target.closest('button')) return;
+  if (e.target.closest('button') || e.target.closest('.ability-box')) return;
   if (e.button === 0) {
     input.dive = true;
     input.jump = true;
@@ -100,6 +101,7 @@ window.addEventListener('mousedown', (e) => {
 });
 
 window.addEventListener('mouseup', (e) => {
+  if (e.target.closest('button') || e.target.closest('.ability-box')) return;
   if (e.button === 0) {
     input.dive = false;
     input.jump = false;
@@ -295,6 +297,7 @@ function updateHudStatic() {
 function openMenu() {
   state = 'menu';
   audio.setMenuMode(true);
+  player.deactivateSlowMo();
   audio.setSlowMo(false, 1.0);
   elHud.classList.remove('slowmo-active');
   elHud.classList.add('hidden');
@@ -306,6 +309,7 @@ function openMenu() {
     loadStage(0);
     state = 'menu';
     audio.setMenuMode(true);
+    player.deactivateSlowMo();
     audio.setSlowMo(false, 1.0);
     elHud.classList.remove('slowmo-active');
     elHud.classList.add('hidden');
@@ -316,6 +320,7 @@ function openMenu() {
 function openShop() {
   state = 'shop';
   audio.setMenuMode(true);
+  player.deactivateSlowMo();
   audio.setSlowMo(false, 1.0);
   elHud.classList.remove('slowmo-active');
   elHud.classList.add('hidden');
@@ -403,10 +408,11 @@ if (elSlowMoBox) {
     e.stopPropagation();
     if (state !== 'playing') return;
     if (!audio.ctx) audio.init();
+    const wasActive = player.slowMo.active;
     const turnedOn = player.triggerSlowMo();
     if (turnedOn) {
       audio.playSlowMoStart();
-    } else {
+    } else if (wasActive) {
       audio.playSlowMoEnd();
     }
   });
@@ -485,7 +491,7 @@ function drawSpeedLines(speed, isDiving = false, timeScale = 1.0, isSlowMo = fal
     const x1 = cx + Math.cos(a) * r1;
     const y1 = cy + Math.sin(a) * r1;
 
-    if (isSlowMo) {
+    if (isSlowMo || timeScale < 0.95) {
       // Chromatic Aberration Fringe (split into Cyan & Magenta)
       fxCtx.lineWidth = 1.3;
       // Cyan channel (-2px)
@@ -621,6 +627,9 @@ function animate(now) {
         world.setPortal(player.pos.z + 450);
       } else if (isTutorial) {
         state = 'tutorial_modal';
+        player.deactivateSlowMo();
+        audio.setSlowMo(false, 1.0);
+        elHud.classList.remove('slowmo-active');
         sparks += 250;
         audio.playObjectiveSuccess();
         elTutorialModal.classList.remove('hidden');

@@ -245,8 +245,41 @@ assert(player.slowMo.cooldown === 0, 'Reset must clear cooldown');
 assert(player.slowMo.timeScale === 1.0, 'Reset must restore timeScale to 1.0');
 
 // Verify input.slowmo in player.update()
-player.update(1/60, { slowmo: true }, world, audio, null);
+let slowMoStartCalls = 0;
+let slowMoEndCalls = 0;
+const mockAudio = {
+  playSlowMoStart: () => { slowMoStartCalls++; },
+  playSlowMoEnd: () => { slowMoEndCalls++; },
+};
+
+// 1. Activation via input.slowmo
+player.reset(world);
+player.update(1/60, { slowmo: true }, world, mockAudio, null);
 assert(player.slowMo.active === true, 'input.slowmo = true must activate slow-mo');
+assert(slowMoStartCalls === 1, 'playSlowMoStart must be called once on activation');
+assert(slowMoEndCalls === 0, 'playSlowMoEnd must not be called on activation');
+
+// 2. Early cancellation via input.slowmo while active
+player.update(1/60, { slowmo: true }, world, mockAudio, null);
+assert(player.slowMo.active === false, 'input.slowmo while active must cancel slow-mo');
+assert(slowMoEndCalls === 1, 'playSlowMoEnd must be called once on early cancellation');
+assert(player.slowMo.cooldown > 0, 'Cooldown must be active after cancellation');
+
+// 3. Blocked trigger while on cooldown must NOT play end audio!
+player.update(1/60, { slowmo: true }, world, mockAudio, null);
+assert(player.slowMo.active === false, 'Trigger must remain blocked on cooldown');
+assert(slowMoEndCalls === 1, 'playSlowMoEnd must NOT be called when trigger is blocked on cooldown!');
+
+// 4. deactivateSlowMo API method
+player.reset(world);
+player.triggerSlowMo();
+assert(player.slowMo.active === true, 'SlowMo should be active');
+const deactivated = player.deactivateSlowMo();
+assert(deactivated === true, 'deactivateSlowMo must return true when active');
+assert(player.slowMo.active === false, 'deactivateSlowMo must set active to false');
+assert(player.slowMo.targetTimeScale === 1.0, 'deactivateSlowMo must restore targetTimeScale to 1.0');
+assert(player.slowMo.cooldown === player.slowMo.maxCooldown, 'deactivateSlowMo must set cooldown to maxCooldown');
+
 console.log('✓ Test 6 passed: Slow-Mo Time Dilation System fully verified.');
 
 console.log('ALL VERIFICATION TESTS COMPLETED SUCCESSFULLY WITH 100% PASS RATE!');

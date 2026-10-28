@@ -393,10 +393,11 @@ export class Player {
     if (this.boardActive > 0) this.boardActive = Math.max(0, this.boardActive - dt);
 
     if (input.slowmo) {
+      const wasActive = this.slowMo.active;
       const activated = this.triggerSlowMo();
       if (activated) {
         audio?.playSlowMoStart?.();
-      } else {
+      } else if (wasActive) {
         audio?.playSlowMoEnd?.();
       }
       input.slowmo = false;

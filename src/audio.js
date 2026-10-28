@@ -167,6 +167,9 @@ export class SoundEngine {
 
     this.timer = setInterval(() => {
       if (!this.ctx || this.muted || !this.playing || this.customAudio) return;
+      if (nextStepTime < this.ctx.currentTime) {
+        nextStepTime = this.ctx.currentTime;
+      }
       const currentStepDuration = baseStepDuration / Math.max(0.25, this.slowMoScale);
       while (nextStepTime < this.ctx.currentTime + 0.12) {
         this._scheduleStep(nextStepTime);
