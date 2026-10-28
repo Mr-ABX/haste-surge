@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HASTE — Broken Worlds</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:ital,wght@0,600;0,800;0,900;1,800;1,900&display=swap');
+
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body, html {
+      width: 100%; height: 100%; overflow: hidden;
+      background: #142238;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #fff;
+    }
+    #game-canvas, #fx-canvas {
+      position: fixed; inset: 0; width: 100%; height: 100%; display: block;
+    }
+    #fx-canvas { pointer-events: none; z-index: 2; }
+
+    /* ==========================================================================
+       AUTHENTIC HASTE: BROKEN WORLDS HUD (Matches Screenshots 1-5)
+       ========================================================================== */
+    #hud {
+      position: fixed; inset: 0; pointer-events: none; z-index: 5;
+      transition: opacity 0.25s ease;
+    }
+    #hud.hidden { opacity: 0; }
+
+    /* Corner-bracket utility matching Haste's delicate reticle frames */
+    .reticle-frame {
+      position: relative;
+      padding: 4px 12px;
+    }
+    .reticle-frame::before,
+    .reticle-frame::after {
+      content: '';
+      position: absolute; top: 0; bottom: 0; width: 5px;
+      border-top: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
+    }
+    .reticle-frame::before {
+      left: 0; border-left: 1.5px solid currentColor;
+    }
+    .reticle-frame::after {
+      right: 0; border-right: 1.5px solid currentColor;
+    }
+
+    /* Top-left red italic speedometer: [ 128 m/s ] */
+    .speed-cluster {
+      position: absolute; top: 22px; left: 26px;
+      color: #e6261f;
+      font-style: italic;
+      font-weight: 900;
+      display: flex; align-items: baseline;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    }
+    #hud-speed {
+      font-family: 'Archivo Black', 'Inter', sans-serif;
+      font-size: 32px; line-height: 1; letter-spacing: -1px;
+    }
+    .speed-unit {
+      font-size: 13px; font-weight: 800; margin-left: 3px;
+    }
+
+    /* Top-right cyan Spark counter: [ ✦ 930 ] +100 */
+    .spark-cluster {
+      position: absolute; top: 22px; right: 26px;
+      text-align: center;
+      color: #26f0ff;
+      font-weight: 800;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    }
+    .spark-row {
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+      font-size: 22px; line-height: 1.05;
+    }
+    .spark-star {
+      width: 16px; height: 16px; fill: #26f0ff;
+      filter: drop-shadow(0 0 4px rgba(38, 240, 255, 0.7));
+    }
+    #hud-sparks-add {
+      margin-top: 3px;
+      font-size: 15px; font-weight: 800; color: #26f0ff;
+      opacity: 0; transition: opacity 0.15s;
+    }
+
+    /* Top-center Boss Bar (Matches Screenshot 4: JUMPER / 5-segment bar / ATTACK THE MACHINE) */
+    #boss-banner {
+      position: absolute; top: 38px; left: 50%; transform: translateX(-50%);
+      text-align: center; display: none;
+      width: 580px; max-width: 72vw;
+    }
+    #boss-name {
+      font-family: 'Archivo Black', 'Inter', sans-serif;
+      font-size: 22px; letter-spacing: 1.5px;
+      color: #e62626;
+      text-transform: uppercase;
+      text-shadow:
+        -1.5px -1.5px 0 #140808,
+         1.5px -1.5px 0 #140808,
+        -1.5px  1.5px 0 #140808,
+         1.5px  1.5px 0 #140808;
+      margin-bottom: 5px;
+    }
+    .boss-hp-outer {
+      position: relative;
+      width: 100%; height: 15px;
+      background: #0d090a;
+      border: 2px solid #0d090a;
+      overflow: hidden;
+    }
+    #boss-hp-fill {
+      width: 100%; height: 100%;
+      background: linear-gradient(180deg, #e82c2c 0%, #b31919 100%);
+      transition: width 0.2s ease;
+    }
+    /* 5 segment dividers */
+    .boss-hp-segments {
+      position: absolute; inset: 0;
+      display: grid; grid-template-columns: repeat(5, 1fr);
+      pointer-events: none;
+    }
+    .boss-hp-segments span {
+      border-right: 2px solid #0d090a;
+    }
+    .boss-hp-segments span:last-child { border-right: none; }
+    #boss-sub {
+      margin-top: 6px;
+      font-size: 13px; font-weight: 900; font-style: italic;
+      letter-spacing: 0.8px; color: #ffffff;
+      text-transform: uppercase;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.75);
+    }
+
+    /* Center-Lower Landing Callout ("Perfect" right above progress bar, Screenshot 1) */
+    #hud-callout {
+      position: absolute; bottom: 185px; left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Archivo Black', 'Inter', sans-serif;
+      font-size: 42px; font-style: italic;
+      letter-spacing: 0.5px;
+      color: rgba(155, 245, 110, 0.65);
+      opacity: 0;
+      transition: opacity 0.18s ease, transform 0.14s ease;
+      pointer-events: none;
+    }
+
+    /* Bottom-Center Haste Cluster (Progress Bar, 3-Notch Energy Bar, Tiny Hearts, Item Circles, Ability Square) */
+    .bottom-cluster {
+      position: absolute; bottom: 38px; left: 50%; transform: translateX(-50%);
+      display: flex; flex-direction: column; align-items: center;
+    }
+    .distance-wrap {
+      position: relative;
+      width: 248px; height: 10px;
+      display: flex; align-items: center;
+      margin-bottom: 9px;
+    }
+    .distance-wrap::before,
+    .distance-wrap::after {
+      content: ''; position: absolute; top: 0; bottom: 0; width: 4px;
+      border-top: 1.5px solid #e6cf3c; border-bottom: 1.5px solid #e6cf3c;
+    }
+    .distance-wrap::before { left: -6px; border-left: 1.5px solid #e6cf3c; }
+    .distance-wrap::after { right: -6px; border-right: 1.5px solid #e6cf3c; }
+    .distance-track {
+      position: relative; width: 100%; height: 3.5px;
+      background: rgba(25, 32, 24, 0.75);
+    }
+    #hud-wall-marker {
+      position: absolute; left: 0; top: 0; bottom: 0;
+      background: #ff4238; width: 0%;
+    }
+    #hud-progress-fill {
+      position: absolute; left: 0; top: 0; bottom: 0;
+      background: #f2d638; width: 0%;
+    }
+
+    /* 3-Notch Pink/Red Energy Bar */
+    .energy-wrap {
+      position: relative;
+      width: 158px; height: 11px;
+      display: flex; align-items: center;
+      margin-bottom: 6px;
+    }
+    .energy-wrap::before,
+    .energy-wrap::after {
+      content: ''; position: absolute; top: 0; bottom: 0; width: 4px;
+      border-top: 1.5px solid #ff3b62; border-bottom: 1.5px solid #ff3b62;
+    }
+    .energy-wrap::before { left: -5px; border-left: 1.5px solid #ff3b62; }
+    .energy-wrap::after { right: -5px; border-right: 1.5px solid #ff3b62; }
+    .energy-track {
+      position: relative; width: 100%; height: 5px;
+      background: rgba(28, 16, 22, 0.75);
+      overflow: hidden;
+    }
+    #hud-energy-fill {
+      width: 65%; height: 100%;
+      background: #ff385c;
+    }
+    .energy-notches {
+      position: absolute; inset: 0;
+      display: grid; grid-template-columns: repeat(3, 1fr);
+    }
+    .energy-notches span {
+      border-right: 1.5px solid rgba(20, 12, 18, 0.85);
+    }
+    .energy-notches span:last-child { border-right: none; }
+
+    /* Tiny crisp red hearts */
+    #hud-hearts {
+      display: flex; gap: 4px; margin-bottom: 10px;
+    }
+    .heart-svg {
+      width: 11px; height: 11px;
+      fill: #ff385c;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.45));
+    }
+    .heart-svg.empty {
+      fill: rgba(30, 20, 28, 0.65);
+    }
+
+    /* Circular Relic Slots */
+    #hud-items {
+      display: flex; gap: 8px; min-height: 28px;
+    }
+    .item-slot {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(22, 30, 42, 0.78);
+      border: 1.5px solid rgba(255, 255, 255, 0.75);
+      display: flex; align-items: center; justify-content: center;
+      padding: 5px;
+    }
+    .item-slot svg { width: 100%; height: 100%; }
+
+    /* Right-side Square Active Ability Box (Matches Screenshot 1 & 2) */
+    .ability-box {
+      position: absolute; right: -58px; bottom: 30px;
+      width: 38px; height: 38px;
+      background: rgba(28, 36, 44, 0.62);
+      border: 1.5px solid rgba(255, 255, 255, 0.88);
+      display: flex; align-items: center; justify-content: center;
+      padding: 6px;
+    }
+    .ability-prompt {
+      position: absolute; top: -15px; left: 50%; transform: translateX(-50%);
+      width: 10px; height: 13px;
+      border: 1.2px solid rgba(255,255,255,0.85);
+      border-radius: 4px;
+    }
+    .ability-prompt::before {
+      content: ''; position: absolute; right: 1px; top: 1px;
+      width: 3px; height: 4px; background: #fff;
+    }
+    .ability-box svg {
+      width: 100%; height: 100%; stroke: #d8c690;
+    }
+
+    /* Bottom-left DEMO watermark + Bottom-right tiny menu trigger (Matches Screenshots 1 & 2) */
+    .demo-tag {
+      position: absolute; bottom: 14px; left: 16px;
+      font-family: 'Archivo Black', 'Inter', sans-serif;
+      font-style: italic; font-size: 16px;
+      letter-spacing: 0.5px; color: rgba(255,255,255,0.92);
+      border-bottom: 2px solid rgba(255,255,255,0.92);
+      line-height: 1.05;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.45);
+    }
+    .corner-tools {
+      position: absolute; bottom: 12px; right: 14px;
+      display: flex; gap: 6px; pointer-events: auto;
+    }
+    .icon-btn {
+      width: 26px; height: 26px;
+      background: rgba(15, 20, 28, 0.65);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 11px; font-weight: 800;
+    }
+    .icon-btn:hover { background: rgba(255,255,255,0.2); }
+
+    /* ==========================================================================
+       AUTHENTIC HASTE KINETIC TITLE SCREEN (Frameless 3D Backdrop + Slanted Blades)
+       ========================================================================== */
+    #menu-modal {
+      position: fixed; inset: 0; z-index: 20;
+      background: linear-gradient(90deg, rgba(10, 18, 32, 0.72) 0%, rgba(10, 18, 32, 0.18) 55%, rgba(10, 18, 32, 0.0) 100%);
+      display: flex; flex-direction: column; justify-content: space-between;
+      padding: 54px 64px;
+    }
+    .title-lockup {
+      max-width: 560px;
+    }
+    .title-kicker {
+      display: inline-block;
+      background: #e6261f;
+      color: #fff;
+      font-weight: 900; font-style: italic; font-size: 11px;
+      letter-spacing: 2.5px;
+      padding: 4px 10px;
+      transform: skewX(-12deg);
+      margin-bottom: 8px;
+    }
+    .title-main {
+      font-family: 'Archivo Black', 'Inter', sans-serif;
+      font-size: 92px; font-style: italic; line-height: 0.88;
+      letter-spacing: -3px; color: #ffffff;
+      text-transform: uppercase;
+      text-shadow:
+        0 6px 0 #141c2e,
+        0 14px 32px rgba(0, 0, 0, 0.55);
+    }
+    .title-sub {
+      font-family: 'Archivo Black', 'Inter', sans-serif;
+      font-size: 22px; font-style: italic;
+      letter-spacing: 6px; color: #f5d742;
+      margin-top: 6px;
+      text-shadow: 0 3px 0 #141c2e;
+    }
+
+    /* Slanted Menu Blades */
+    .menu-blades {
+      display: flex; flex-direction: column; gap: 10px;
+      max-width: 440px; margin: 24px 0;
+    }
+    .blade-btn {
+      position: relative;
+      background: rgba(16, 24, 38, 0.82);
+      color: #ffffff;
+      border: none;
+      border-left: 5px solid #f5d742;
+      padding: 14px 24px;
+      transform: skewX(-12deg);
+      text-align: left;
+      cursor: pointer;
+      transition: transform 0.14s cubic-bezier(0.2, 0.9, 0.2, 1), background 0.14s, color 0.14s;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+    }
+    .blade-btn:hover {
+      background: #ffffff;
+      color: #101826;
+      border-left-color: #e6261f;
+      transform: skewX(-12deg) translateX(12px);
+    }
+    .blade-btn .blade-title {
+      display: block;
+      font-family: 'Archivo Black', 'Inter', sans-serif;
+      font-size: 19px; font-style: italic; letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .blade-btn .blade-meta {
+      display: block;
+      font-size: 11px; font-weight: 800; letter-spacing: 1.5px;
+      opacity: 0.72; margin-top: 2px;
+      text-transform: uppercase;
+    }
+
+    .shard-strip {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin-top: 4px;
+    }
+    .mini-blade {
+      background: rgba(16, 24, 38, 0.76);
+      color: #d8e8ff;
+      border: 1px solid rgba(255,255,255,0.22);
+      padding: 8px 14px;
+      transform: skewX(-12deg);
+      font-size: 11px; font-weight: 900; font-style: italic;
+      letter-spacing: 1px; cursor: pointer;
+      transition: all 0.12s;
+    }
+    .mini-blade:hover {
+      background: #f5d742; color: #101826; border-color: #f5d742;
+      transform: skewX(-12deg) translateY(-2px);
+    }
+
+    .menu-footer {
+      display: flex; align-items: center; justify-content: space-between;
+      border-top: 1px solid rgba(255,255,255,0.18);
+      padding-top: 16px;
+      font-size: 12px; font-weight: 800; letter-spacing: 1px;
+      color: rgba(255,255,255,0.88);
+      text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    }
+    .key-chip {
+      display: inline-block;
+      background: rgba(16, 24, 38, 0.85);
+      border: 1px solid rgba(255,255,255,0.35);
+      padding: 2px 7px; margin: 0 3px;
+      font-style: italic; color: #f5d742;
+    }
+
+    /* ==========================================================================
+       SHARD CLEAR / MANIFEST RELICS SCREEN
+       ========================================================================== */
+    #shop-modal {
+      position: fixed; inset: 0; z-index: 22;
+      background: rgba(10, 16, 28, 0.84);
+      backdrop-filter: blur(10px);
+      display: none; align-items: center; justify-content: center;
+      padding: 32px;
+    }
+    .shop-container {
+      max-width: 880px; width: 100%;
+    }
+    #shop-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 14px; margin: 24px 0 28px;
+    }
+    .shop-card {
+      background: rgba(20, 30, 48, 0.88);
+      border-left: 4px solid #26f0ff;
+      padding: 18px;
+      transform: skewX(-6deg);
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .shop-icon-wrap {
+      width: 36px; height: 36px;
+    }
+    .shop-icon-wrap svg { width: 100%; height: 100%; }
+    .shop-name {
+      font-family: 'Archivo Black', 'Inter', sans-serif;
+      font-size: 15px; font-style: italic; text-transform: uppercase;
+    }
+    .shop-desc { font-size: 12px; color: #b5cbe8; flex: 1; }
+    .shop-buy {
+      background: #f5d742; color: #101826; border: none;
+      padding: 9px 12px; font-weight: 900; font-style: italic;
+      cursor: pointer; text-transform: uppercase;
+    }
+    .shop-buy:disabled { opacity: 0.3; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+  <canvas id="fx-canvas"></canvas>
+
+  <!-- AUTHENTIC HASTE: BROKEN WORLDS HUD -->
+  <div id="hud" class="hidden">
+    <!-- Top-Left Speedometer -->
+    <div class="speed-cluster reticle-frame">
+      <span id="hud-speed">128</span><span class="speed-unit">m/s</span>
+    </div>
+
+    <!-- Top-Center Boss Health Bar (Matches Screenshot 4: JUMPER) -->
+    <div id="boss-banner">
+      <div id="boss-name">JUMPER</div>
+      <div class="boss-hp-outer">
+        <div id="boss-hp-fill"></div>
+        <div class="boss-hp-segments">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+      <div id="boss-sub">ATTACK THE MACHINE</div>
+    </div>
+
+    <!-- Top-Right Sparks Counter -->
+    <div class="spark-cluster">
+      <div class="reticle-frame spark-row">
+        <svg class="spark-star" viewBox="0 0 24 24">
+          <path d="M12 1L15 9L23 12L15 15L12 23L9 15L1 12L9 9Z"/>
+        </svg>
+        <span id="hud-sparks">930</span>
+      </div>
+      <div id="hud-sparks-add">+100</div>
+    </div>
+
+    <!-- Center-Lower Landing Grade Callout ("Perfect", Screenshot 1) -->
+    <div id="hud-callout">Perfect</div>
+
+    <!-- Bottom-Center Haste Cluster -->
+    <div class="bottom-cluster">
+      <div class="distance-wrap">
+        <div class="distance-track">
+          <div id="hud-wall-marker"></div>
+          <div id="hud-progress-fill"></div>
+        </div>
+      </div>
+
+      <div class="energy-wrap">
+        <div class="energy-track">
+          <div id="hud-energy-fill"></div>
+          <div class="energy-notches"><span></span><span></span><span></span></div>
+        </div>
+      </div>
+
+      <div id="hud-hearts"></div>
+      <div id="hud-items"></div>
+
+      <!-- Active Ability Slot (Right of bars) -->
+      <div class="ability-box" title="Courier Board Surge (Right-Click / E / Shift)">
+        <div class="ability-prompt"></div>
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2">
+          <path d="M4 17c4-2 12-2 16 0M6 14l12-6"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="demo-tag">DEMO</div>
+
+    <div class="corner-tools">
+      <button class="icon-btn" id="btn-mute" title="Toggle Audio">SND</button>
+      <button class="icon-btn" id="btn-open-menu" title="Menu (ESC)">ESC</button>
+    </div>
+  </div>
+
+  <!-- KINETIC TITLE SCREEN OVER LIVE 3D WORLD -->
+  <div id="menu-modal">
+    <div class="title-lockup">
+      <div class="title-kicker">HIGH-SPEED PROCEDURAL RUNNER</div>
+      <div class="title-main">HASTE</div>
+      <div class="title-sub">BROKEN WORLDS</div>
+    </div>
+
+    <div class="menu-blades">
+      <button class="blade-btn" data-start-stage="0">
+        <span class="blade-title">ENTER SHARD 01 // VERDANT EXPANSE</span>
+        <span class="blade-meta">EMERALD HILLS, SAKURA CANOPIES &amp; ANCIENT RINGS</span>
+      </button>
+
+      <button class="blade-btn" data-start-stage="1">
+        <span class="blade-title">BOSS ENCOUNTER // JUMPER</span>
+        <span class="blade-meta">ATTACK THE LEAPING WAR-MACHINE IN BIOME 01</span>
+      </button>
+
+      <button class="blade-btn" data-start-stage="3">
+        <span class="blade-title">ENTER SHARD 02 // SCORCHED DUNES</span>
+        <span class="blade-meta">GOLDEN SAGUARO DESERT &amp; DIMENSIONAL VORTEX</span>
+      </button>
+
+      <div class="shard-strip">
+        <button class="mini-blade" data-start-stage="2">BOSS 2: CHRONOS TITAN</button>
+        <button class="mini-blade" data-start-stage="4">BOSS 3: DUNE LEVIATHAN</button>
+        <button class="mini-blade" data-start-stage="5">BOSS 4: SOLARIS MONOLITH</button>
+        <label class="mini-blade" style="cursor:pointer;">
+          LOAD LYRIA AUDIO
+          <input type="file" id="lyria-file" accept="audio/*" style="display:none;" />
+        </label>
+      </div>
+    </div>
+
+    <div class="menu-footer">
+      <div>
+        STEER <span class="key-chip">A / D</span> OR <span class="key-chip">◀ / ▶</span>
+        &nbsp;&bull;&nbsp;
+        FAST-FALL DIVE <span class="key-chip">HOLD SPACE</span> OR <span class="key-chip">LEFT CLICK</span>
+        &nbsp;&bull;&nbsp;
+        HOP <span class="key-chip">W / ▲</span>
+        &nbsp;&bull;&nbsp;
+        BOARD SURGE <span class="key-chip">RIGHT CLICK / E</span>
+      </div>
+      <div>EVERY LANDING COUNTS</div>
+    </div>
+  </div>
+
+  <!-- SHARD CLEAR / SPARKS SHOP -->
+  <div id="shop-modal">
+    <div class="shop-container">
+      <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+        <div>
+          <div class="title-kicker">SHARD COMPLETE</div>
+          <div class="title-main" id="shop-header-title" style="font-size:54px;">MANIFEST RELICS</div>
+        </div>
+        <div class="spark-row" style="color:#26f0ff; font-size:28px; font-weight:900;">
+          <svg class="spark-star" style="width:22px;height:22px;" viewBox="0 0 24 24">
+            <path d="M12 1L15 9L23 12L15 15L12 23L9 15L1 12L9 9Z"/>
+          </svg>
+          <span id="shop-sparks">930</span>
+        </div>
+      </div>
+
+      <div id="shop-grid"></div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <button class="mini-blade" id="btn-shop-menu">RETURN TO TITLE</button>
+        <button class="blade-btn" id="btn-next-stage" style="padding:12px 32px;">
+          <span class="blade-title">LAUNCH NEXT SHARD ➔</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
