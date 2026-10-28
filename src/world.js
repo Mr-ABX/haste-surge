@@ -147,27 +147,23 @@ export class World {
   h(x, z) {
     if (this.isTutorial) {
       let y = 14;
-      if (z < 250) {
-        // Section 1: Gentle rolling turf for steering basics
-        y += Math.sin(z / 45) * 2.2;
-      } else if (z < 560) {
-        // Section 2: First Crest Launch Hill
-        // Smooth ramp rising to peak at z = 390 (+24m) then sharp drop-off at 410-520
-        const u = (z - 390) / 85;
-        const crest = Math.exp(-u * u) * 25;
-        y += crest - Math.max(0, z - 410) * 0.12;
-      } else if (z < 1050) {
-        // Section 3 & 4: The Great Crest & Dive Valley
-        // High launch cliff peak at z = 670 (+36m)
-        const u = (z - 670) / 75;
-        const launchPeak = Math.exp(-u * u) * 36;
-        // Steep downhill landing slope dropping by 38m (slope dz ~ -0.36)
-        const drop = Math.min(38, Math.max(0, z - 690) * 0.36);
-        y += launchPeak - drop;
-      } else {
-        // Section 5: Portal Runway
-        y += 8 + Math.sin(z / 70) * 2.0;
-      }
+      // Section 1: Gentle rolling turf for steering basics (Z: 0 to 260)
+      const fade1 = 1 - THREE.MathUtils.smoothstep(z, 180, 260);
+      y += Math.sin(z / 45) * 2.2 * fade1;
+
+      // Section 2: Launch Crest Hill (rises smoothly up to peak at z = 380, +26m)
+      const u = (z - 380) / 65;
+      const crest = Math.exp(-u * u) * 26;
+      y += crest;
+
+      // Section 3 & 4: Continuous Steep Downhill Dive Chute (drops from 400 down to 720, -48m)
+      const valleyDrop = THREE.MathUtils.smoothstep(z, 400, 720) * 48;
+      y -= valleyDrop;
+
+      // Section 5: Portal Runway smooth rolling speedway (Z: 760 to 1550)
+      const runwayWave = THREE.MathUtils.smoothstep(z, 760, 900);
+      y += Math.sin(z / 60) * 1.5 * runwayWave;
+
       const d = (x - this.pathX(z)) / 85;
       y += d * d * 16;
       return y;
@@ -332,32 +328,32 @@ export class World {
           }
         }
       }
-      // 2. Z: 380 to 520 - High airborne crest launch arc
-      if (z0 <= 540 && z0 + CL >= 370) {
-        for (let j = 0; j < 16; j++) {
-          const z = z0 + j * 12;
-          if (z >= 370 && z <= 520) {
-            const u = (z - 370) / 150;
+      // 2. Z: 330 to 440 - High airborne crest launch arc
+      if (z0 <= 450 && z0 + CL >= 330) {
+        for (let j = 0; j < 12; j++) {
+          const z = z0 + j * 10;
+          if (z >= 330 && z <= 440) {
+            const u = (z - 330) / 110;
             const x = this.pathX(z);
-            sparks.push({ x, y: this.h(x, z) + 3.0 + Math.sin(u * Math.PI) * 16, z, scale: 1.25, alive: true });
+            sparks.push({ x, y: this.h(x, z) + 2.5 + Math.sin(u * Math.PI) * 14, z, scale: 1.25, alive: true });
           }
         }
       }
-      // 3. Z: 680 to 920 - Fast-fall dive downhill chute
-      if (z0 <= 920 && z0 + CL >= 680) {
+      // 3. Z: 460 to 680 - Fast-fall dive downhill chute through guidance arches
+      if (z0 <= 690 && z0 + CL >= 460) {
         for (let j = 0; j < 18; j++) {
           const z = z0 + j * 12;
-          if (z >= 680 && z <= 920) {
+          if (z >= 460 && z <= 680) {
             const x = this.pathX(z);
-            sparks.push({ x, y: this.h(x, z) + 2.2, z, scale: 1.2, alive: true });
+            sparks.push({ x, y: this.h(x, z) + 2.4, z, scale: 1.2, alive: true });
           }
         }
       }
-      // 4. Z: 1050 to 1440 - Speedway lanes to Portal
-      if (z0 <= 1450 && z0 + CL >= 1050) {
-        for (let j = 0; j < 15; j++) {
-          const z = z0 + j * 26;
-          if (z >= 1050 && z <= 1440) {
+      // 4. Z: 760 to 1480 - High-speed speedway lanes to Portal
+      if (z0 <= 1490 && z0 + CL >= 760) {
+        for (let j = 0; j < 18; j++) {
+          const z = z0 + j * 24;
+          if (z >= 760 && z <= 1480) {
             [-6, 0, 6].forEach((ox) => {
               const x = this.pathX(z) + ox;
               sparks.push({ x, y: this.h(x, z) + 1.8, z, scale: 1.05, alive: true });
@@ -588,7 +584,7 @@ export class World {
     const chevGeo = new THREE.ConeGeometry(2.4, 4.8, 4);
     chevGeo.rotateZ(Math.PI);
 
-    this.tutorialZPositions = [740, 800, 860];
+    this.tutorialZPositions = [480, 560, 640];
     this.tutorialGateMeshes = [];
     this.tutorialZPositions.forEach(() => {
       const gate = new THREE.Group();

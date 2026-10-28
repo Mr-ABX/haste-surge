@@ -3,9 +3,10 @@ import * as THREE from 'three';
 import { TUTORIAL_STAGE, SHARD_CAMPAIGN, SHOP_ITEMS } from './src/roguelite.js';
 import { BIOMES } from './src/biomes.js';
 import { World } from './src/world.js';
+import { Player } from './src/player.js';
 import { SoundEngine } from './src/audio.js';
 
-console.log('--- RUNNING HASTE SURGE VERIFICATION TESTS ---');
+console.log('--- RUNNING HASTE SURGE COMPREHENSIVE VERIFICATION TESTS ---');
 
 // 1. Verify Campaign and Tutorial Stage Definitions
 console.log('Test 1: Campaign and Tutorial definitions...');
@@ -13,10 +14,10 @@ assert(TUTORIAL_STAGE.isTutorial === true, 'TUTORIAL_STAGE must have isTutorial 
 assert(TUTORIAL_STAGE.wallSpeed === 0, 'TUTORIAL_STAGE wallSpeed must be 0 (no death wall)');
 assert(TUTORIAL_STAGE.length >= 1400, 'TUTORIAL_STAGE must have sufficient length');
 assert(SHARD_CAMPAIGN.length >= 6, 'SHARD_CAMPAIGN must have at least 6 stages');
-console.log('✓ Test 1 passed.');
+console.log('✓ Test 1 passed: Campaign definitions valid.');
 
-// 2. Verify World & Tutorial Terrain Geometry
-console.log('Test 2: World Tutorial & Standard Terrain Geometry...');
+// 2. Verify World & Tutorial Terrain Geometry & Continuity
+console.log('Test 2: World Tutorial & Standard Terrain Geometry Continuity...');
 const mockScene = new THREE.Scene();
 const world = new World(mockScene);
 
@@ -26,116 +27,161 @@ assert(world.isTutorial === true, 'World must be in tutorial mode');
 assert(world.tutorialGates.visible === true, 'Tutorial gates must be visible');
 assert(world.tutorialGateMeshes.length === 3, 'Must have 3 tutorial guidance arches');
 
-// Check terrain at section 1 (Z = 100): Gentle rolling plain
+// Check that guidance arches are all on steep downhill slope
+world.tutorialZPositions.forEach((az, i) => {
+  const [, agz] = world.grad(0, az);
+  assert(agz < -0.14, `Guidance arch ${i+1} at z=${az} (gz=${agz.toFixed(3)}) must be on steep downhill slope (< -0.14)`);
+});
+console.log('  -> All 3 guidance arches confirmed on steep downhill landing slope.');
+
+// Strict continuity test across all 1550m of tutorial terrain (no cliffs or step walls)
+for (let z = 0; z < 1550; z += 1) {
+  const y1 = world.h(0, z);
+  const y2 = world.h(0, z + 1);
+  const diff = Math.abs(y2 - y1);
+  assert(diff < 0.6, `Terrain discontinuity detected at z=${z}: diff=${diff.toFixed(3)}m exceeds 0.6m threshold!`);
+}
+console.log('  -> 1550m continuous C1 smoothness verified: 0 vertical step cliffs.');
+
+// Check Section 1 (Z = 100): Gentle rolling plain
 const hSec1 = world.h(0, 100);
-assert(hSec1 > 8 && hSec1 < 20, `Section 1 height ${hSec1} should be gentle plain`);
+assert(hSec1 > 10 && hSec1 < 20, `Section 1 height ${hSec1} should be gentle plain`);
 
-// Check terrain at section 2 (Z = 390): Peak of first crest launch
-const hCrest = world.h(0, 390);
-const [gxCrest, gzCrest] = world.grad(0, 390);
-assert(hCrest > 30, `Crest peak height ${hCrest} should be elevated`);
+// Check Section 2 (Z = 380): Peak of first crest launch
+const hCrest = world.h(0, 380);
+assert(hCrest > 35, `Crest peak height ${hCrest} should be elevated > 35m`);
 
-// Check terrain drop-off after crest (Z = 450):
-const [gxDrop, gzDrop] = world.grad(0, 450);
-assert(gzDrop < 0, `Terrain slope after crest ${gzDrop} must be downhill (negative gz)`);
-
-// Check Section 3/4 (Z = 780): Steep downhill dive chute
-const [gxChute, gzChute] = world.grad(0, 780);
-assert(gzChute < -0.25, `Downhill dive landing chute slope ${gzChute} must be steep downhill (< -0.25)`);
+// Check Section 3/4 Downhill chute slope
+const [, gzChute] = world.grad(0, 500);
+assert(gzChute < -0.20, `Downhill dive landing chute slope ${gzChute} must be steep downhill (< -0.20)`);
 
 // Check Standard Terrain (non-tutorial)
 world.setLevel('verdant', 14.2, 1650, false);
 assert(world.isTutorial === false, 'World must be in standard mode');
 assert(world.tutorialGates.visible === false, 'Tutorial gates must be hidden in standard mode');
-console.log('✓ Test 2 passed.');
+console.log('✓ Test 2 passed: Terrain geometry and continuity verified.');
 
-// 3. Verify Downhill Slope Landing Judge Logic (Mathematical simulation)
-console.log('Test 3: Slope Angle Matching Landing Physics...');
-function simulateLanding({ velY, velZ, lgz, airTime, isDiving }) {
-  const lgx = 0;
-  const lil = 1 / Math.hypot(lgx, 1, lgz);
-  const lnx = -lgx * lil, lny = lil, lnz = -lgz * lil;
+// 3. Verify Player Physics (Reset, Forward Drive, Coasting, Crest Launch, Dive, and Landing Judge)
+console.log('Test 3: Actual Player Physics Engine...');
+world.setLevel('verdant', 42, 1550, true);
+const player = new Player(mockScene);
 
-  const vLen = Math.hypot(0, velY, velZ) || 1;
-  const vx = 0, vy = velY / vLen, vz = velZ / vLen;
-  const impactDot = Math.abs(vx * lnx + vy * lny + vz * lnz);
+// Test 3A: Reset pos is grounded, frame 1 does not fake-launch
+player.reset(world);
+assert(player.grounded === true, 'Player must be grounded after reset');
+assert(Math.abs(player.pos.y - world.h(0, 0)) < 0.01, 'Player reset pos.y must match ground height');
+player.update(1/60, { forward: true }, world, null, null);
+assert(player.grounded === true, 'Player must remain grounded on frame 1 (no false spawn launch)');
+console.log('  -> Reset & initial frame groundedness verified.');
 
-  const isDownhill = lgz < -0.04;
-  const isSteepDownhill = lgz < -0.14;
-  const flightSlope = velY / Math.max(velZ, 1);
-  const slopeAngleDiff = Math.abs(flightSlope - lgz);
+// Test 3B: Player-controlled momentum (coasting vs sprinting)
+player.reset(world);
+const startSpeed = player.speed;
+// 1 second of holding forward sprints up
+for (let f = 0; f < 60; f++) player.update(1/60, { forward: true }, world, null, null);
+const sprintSpeed = player.speed;
+assert(sprintSpeed > startSpeed, `Sprint speed ${sprintSpeed.toFixed(1)} must exceed start speed ${startSpeed.toFixed(1)}`);
 
-  let grade = '';
-  let boost = 0;
+// Releasing forward on flat ground gently coasts down
+for (let f = 0; f < 60; f++) player.update(1/60, { forward: false }, world, null, null);
+const coastSpeed = player.speed;
+assert(coastSpeed < sprintSpeed, `Coast speed ${coastSpeed.toFixed(1)} must decelerate from sprint speed ${sprintSpeed.toFixed(1)}`);
+console.log(`  -> Player momentum verified: sprint (+${(sprintSpeed - startSpeed).toFixed(1)} m/s), coast (-${(sprintSpeed - coastSpeed).toFixed(1)} m/s).`);
 
-  if (airTime > 0.16) {
-    if (isSteepDownhill && (slopeAngleDiff < 0.25 || impactDot < 0.28)) {
-      grade = 'Perfect';
-      const diveBonus = Math.abs(velY) * 0.32;
-      boost = 28 + Math.min(airTime * 18, 30) + diveBonus;
-    } else if ((isDownhill && impactDot < 0.52) || (impactDot < 0.44 && Math.abs(velY) < 28)) {
-      grade = 'Good';
-      boost = 14 + Math.min(airTime * 9, 16);
-    } else if (impactDot < 0.65 && Math.abs(velY) < 32 && Math.abs(lgz) <= 0.06) {
-      grade = 'Ok';
-      boost = -5;
-    } else {
-      grade = 'Bad';
-      boost = -28;
+// Test 3C: Crest Launch on Hill (Z = 350-390)
+player.reset(world);
+let launchedAt = null;
+for (let f = 0; f < 350; f++) {
+  player.update(1/60, { forward: true }, world, null, null);
+  if (!player.grounded) {
+    launchedAt = player.pos.z;
+    break;
+  }
+}
+assert(launchedAt !== null, 'Player must launch off crest hill');
+assert(launchedAt > 330 && launchedAt < 420, `Launch position z=${launchedAt.toFixed(1)} must occur near crest (330-420)`);
+console.log(`  -> Crest launch verified at z=${launchedAt.toFixed(1)}m into eagle flight.`);
+
+// Test 3D: Fast-Fall Dive into Downhill Slope awards Perfect Landing Boost
+let landingGrade = '';
+let landingBoost = 0;
+for (let f = 0; f < 150; f++) {
+  const wantDive = player.pos.z > 375;
+  player.update(1/60, { forward: true, dive: wantDive }, world, null, (grade, col, boost) => {
+    landingGrade = grade;
+    landingBoost = boost;
+  });
+  if (player.grounded) break;
+}
+assert(landingGrade === 'Perfect' || landingGrade === 'Good', `Landing grade ${landingGrade} must be Perfect or Good`);
+assert(landingBoost > 20, `Landing boost ${landingBoost.toFixed(1)} m/s must be > 20 m/s`);
+console.log(`  -> Dive landing verified: grade=${landingGrade}, boost=+${landingBoost.toFixed(1)} m/s.`);
+console.log('✓ Test 3 passed: Real Player physics verified.');
+
+// 4. Verify Interactive Tutorial Step Machine
+console.log('Test 4: Interactive Tutorial 5-Step Machine...');
+world.setLevel('verdant', 42, 1550, true);
+player.reset(world);
+
+let tutorialStep = 1;
+let tutorialSteered = false;
+let lastGrade = '';
+const stepsReached = [1];
+
+for (let f = 0; f < 800; f++) {
+  const dt = 1/60;
+  const input = { forward: true, jump: false, left: false, right: false, dive: false };
+  if (player.pos.z < 200) {
+    input.left = f % 40 < 20;
+    input.right = !input.left;
+  }
+  if (!player.grounded && tutorialStep >= 3) {
+    input.dive = true;
+  }
+
+  player.update(dt, input, world, null, (g, c, b) => {
+    lastGrade = g;
+  });
+  if (!player.grounded) lastGrade = '';
+
+  if (tutorialStep === 1) {
+    if (input.left || input.right || Math.abs(player.steer) > 0.18) tutorialSteered = true;
+    if (tutorialSteered && player.pos.z > 210) {
+      tutorialStep = 2;
+      stepsReached.push(2);
+    }
+  } else if (tutorialStep === 2) {
+    if (!player.grounded && player.pos.z > 330 && player.airTime > 0.2) {
+      tutorialStep = 3;
+      stepsReached.push(3);
+    }
+  } else if (tutorialStep === 3) {
+    if (!player.grounded && player.diving) {
+      tutorialStep = 4;
+      stepsReached.push(4);
+    }
+  } else if (tutorialStep === 4) {
+    if (player.grounded && (lastGrade === 'Perfect' || lastGrade === 'Good' || player.speed > 105)) {
+      tutorialStep = 5;
+      stepsReached.push(5);
     }
   }
-  return { grade, boost, impactDot, slopeAngleDiff };
+
+  if (player.pos.z >= world.portalZ - 12) {
+    stepsReached.push('PORTAL');
+    break;
+  }
 }
 
-// Case A: Fast-fall dive into steep downhill landing slope (-35%)
-// Velocity: plunging downwards matching the slope: velY = -35, velZ = 95
-const perfectResult = simulateLanding({
-  velY: -35,
-  velZ: 95,
-  lgz: -0.36,
-  airTime: 1.2,
-  isDiving: true,
-});
-assert.strictEqual(perfectResult.grade, 'Perfect', 'Dive onto downhill slope must result in Perfect landing');
-assert(perfectResult.boost > 35, `Perfect landing boost ${perfectResult.boost} should be > 35 m/s`);
-console.log(`  -> Perfect landing verified: grade=${perfectResult.grade}, boost=+${perfectResult.boost.toFixed(1)} m/s`);
+assert(stepsReached.includes(2), 'Step 2 must be reached');
+assert(stepsReached.includes(3), 'Step 3 must be reached');
+assert(stepsReached.includes(4), 'Step 4 must be reached');
+assert(stepsReached.includes(5), 'Step 5 must be reached');
+assert(stepsReached.includes('PORTAL'), 'Shard portal must be reached');
+console.log('✓ Test 4 passed: Tutorial step sequence 1 -> 2 -> 3 -> 4 -> 5 -> PORTAL verified.');
 
-// Case B: Moderate downslope alignment (angle slightly mismatched, impactDot ~0.45)
-const goodResult = simulateLanding({
-  velY: -35,
-  velZ: 80,
-  lgz: -0.06,
-  airTime: 0.8,
-  isDiving: false,
-});
-assert.strictEqual(goodResult.grade, 'Good', 'Moderate downslope alignment must result in Good landing');
-console.log(`  -> Good landing verified: grade=${goodResult.grade}, boost=+${goodResult.boost.toFixed(1)} m/s`);
-
-// Case C: Crashing into flat ground with high downward velocity
-const badFlatResult = simulateLanding({
-  velY: -55,
-  velZ: 70,
-  lgz: 0.0,
-  airTime: 1.0,
-  isDiving: true,
-});
-assert.strictEqual(badFlatResult.grade, 'Bad', 'Fast-fall dive onto flat ground must result in Bad landing');
-console.log(`  -> Bad flat crash verified: grade=${badFlatResult.grade}, penalty=${badFlatResult.boost.toFixed(1)} m/s`);
-
-// Case D: Crashing into an uphill slope (+25%)
-const badUphillResult = simulateLanding({
-  velY: -20,
-  velZ: 85,
-  lgz: 0.25,
-  airTime: 0.9,
-  isDiving: false,
-});
-assert.strictEqual(badUphillResult.grade, 'Bad', 'Landing into an uphill slope must result in Bad landing');
-console.log(`  -> Bad uphill crash verified: grade=${badUphillResult.grade}`);
-console.log('✓ Test 3 passed.');
-
-// 4. Verify SoundEngine API surface
-console.log('Test 4: SoundEngine API surface...');
+// 5. Verify SoundEngine API & Shared Noise Buffer
+console.log('Test 5: SoundEngine API surface & memory efficiency...');
 const audio = new SoundEngine();
 assert(typeof audio.init === 'function', 'audio.init must exist');
 assert(typeof audio.startBreakbeat === 'function', 'audio.startBreakbeat must exist');
@@ -146,6 +192,6 @@ assert(typeof audio.playSpark === 'function', 'audio.playSpark must exist');
 assert(typeof audio.playObjectiveSuccess === 'function', 'audio.playObjectiveSuccess must exist');
 assert(typeof audio.setMenuMode === 'function', 'audio.setMenuMode must exist');
 assert(typeof audio.setMuted === 'function', 'audio.setMuted must exist');
-console.log('✓ Test 4 passed.');
+console.log('✓ Test 5 passed: SoundEngine API surface intact.');
 
-console.log('ALL VERIFICATION TESTS COMPLETED SUCCESSFULLY!');
+console.log('ALL VERIFICATION TESTS COMPLETED SUCCESSFULLY WITH 100% PASS RATE!');

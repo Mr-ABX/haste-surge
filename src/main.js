@@ -35,6 +35,7 @@ let stageIdx = 0;
 let isTutorial = false;
 let tutorialStep = 1;
 let tutorialDiveAccum = 0;
+let tutorialSteered = false;
 let lastLandingGrade = '';
 let sparks = 930;
 let recentSparks = 0;
@@ -52,10 +53,13 @@ window.addEventListener('keydown', (e) => {
 
   if (k === 'KeyA' || k === 'ArrowLeft') input.left = true;
   if (k === 'KeyD' || k === 'ArrowRight') input.right = true;
-  if (k === 'KeyS' || k === 'ArrowDown' || k === 'Space') input.dive = true;
+  if (k === 'KeyS' || k === 'ArrowDown') input.dive = true;
+  if (k === 'Space') {
+    input.dive = true;
+    input.jump = true;
+  }
   if (k === 'KeyW' || k === 'ArrowUp') {
     input.forward = true;
-    input.jump = true;
   }
   if (k === 'KeyE' || k === 'ShiftLeft' || k === 'ShiftRight') input.boost = true;
   if (k === 'Escape' && state === 'playing') openMenu();
@@ -65,10 +69,13 @@ window.addEventListener('keyup', (e) => {
   const k = e.code;
   if (k === 'KeyA' || k === 'ArrowLeft') input.left = false;
   if (k === 'KeyD' || k === 'ArrowRight') input.right = false;
-  if (k === 'KeyS' || k === 'ArrowDown' || k === 'Space') input.dive = false;
+  if (k === 'KeyS' || k === 'ArrowDown') input.dive = false;
+  if (k === 'Space') {
+    input.dive = false;
+    input.jump = false;
+  }
   if (k === 'KeyW' || k === 'ArrowUp') {
     input.forward = false;
-    input.jump = false;
   }
   if (k === 'KeyE' || k === 'ShiftLeft' || k === 'ShiftRight') input.boost = false;
 });
@@ -77,12 +84,18 @@ window.addEventListener('mousedown', (e) => {
   if (!audio.ctx) audio.init();
   if (state !== 'playing') return;
   if (e.target.closest('button')) return;
-  if (e.button === 0) input.dive = true;
+  if (e.button === 0) {
+    input.dive = true;
+    input.jump = true;
+  }
   if (e.button === 2) input.boost = true;
 });
 
 window.addEventListener('mouseup', (e) => {
-  if (e.button === 0) input.dive = false;
+  if (e.button === 0) {
+    input.dive = false;
+    input.jump = false;
+  }
   if (e.button === 2) input.boost = false;
 });
 
@@ -193,6 +206,7 @@ function startTutorial() {
   stageIdx = -1;
   tutorialStep = 1;
   tutorialDiveAccum = 0;
+  tutorialSteered = false;
   lastLandingGrade = '';
 
   audio.init();
@@ -270,6 +284,13 @@ function openMenu() {
   elTutorialModal.classList.add('hidden');
   elTutorialHud.classList.add('hidden');
   elMenuModal.style.display = 'flex';
+  if (isTutorial) {
+    loadStage(0);
+    state = 'menu';
+    audio.setMenuMode(true);
+    elHud.classList.add('hidden');
+    elMenuModal.style.display = 'flex';
+  }
 }
 
 function openShop() {
@@ -406,11 +427,17 @@ function animate(now) {
   const cfg = isTutorial ? TUTORIAL_STAGE : SHARD_CAMPAIGN[stageIdx];
 
   if (state === 'playing') {
-    player.update(dt, input, world, audio, (grade, col) => {
+    player.update(dt, input, world, audio, (grade, col, boost) => {
       lastLandingGrade = grade;
-      showCallout(grade, col);
+      const boostText = boost > 0 ? ` +${Math.round(boost)} m/s` : boost < 0 ? ` ${Math.round(boost)} m/s` : '';
+      showCallout(`${grade.toUpperCase()}${boostText}`, col);
       if (grade === 'Bad') camShake = 0.42;
     });
+
+    if (!player.grounded) {
+      // Clear stale landing grade while airborne so old landings cannot trigger step completions
+      lastLandingGrade = '';
+    }
 
     const got = world.collectSparks(player.pos, player.stats.magnetRadius);
     if (got > 0) {
@@ -448,14 +475,17 @@ function animate(now) {
     // Interactive Tutorial Step Machine
     if (isTutorial) {
       if (tutorialStep === 1) {
-        if ((input.left || input.right || Math.abs(player.steer) > 0.22) && player.pos.z > 210) {
+        if (input.left || input.right || Math.abs(player.steer) > 0.18) {
+          tutorialSteered = true;
+        }
+        if (tutorialSteered && player.pos.z > 210) {
           tutorialStep = 2;
           updateTutorialHud();
           audio.playObjectiveSuccess();
           showCallout('STEP COMPLETE!', 'rgba(38, 240, 255, 0.95)');
         }
       } else if (tutorialStep === 2) {
-        if (!player.grounded && player.pos.z > 370 && player.airTime > 0.45) {
+        if (!player.grounded && player.pos.z > 330 && player.airTime > 0.2) {
           tutorialStep = 3;
           updateTutorialHud();
           audio.playObjectiveSuccess();
@@ -463,16 +493,13 @@ function animate(now) {
         }
       } else if (tutorialStep === 3) {
         if (!player.grounded && player.diving) {
-          tutorialDiveAccum += dt;
-          if (tutorialDiveAccum > 0.3) {
-            tutorialStep = 4;
-            updateTutorialHud();
-            audio.playObjectiveSuccess();
-            showCallout('FAST-FALL DIVE!', 'rgba(255, 150, 46, 0.95)');
-          }
+          tutorialStep = 4;
+          updateTutorialHud();
+          audio.playObjectiveSuccess();
+          showCallout('FAST-FALL DIVE!', 'rgba(255, 150, 46, 0.95)');
         }
       } else if (tutorialStep === 4) {
-        if (lastLandingGrade === 'Perfect' || lastLandingGrade === 'Good' || (player.grounded && player.pos.z > 870 && player.speed > 105)) {
+        if (player.grounded && (lastLandingGrade === 'Perfect' || lastLandingGrade === 'Good' || player.speed > 105)) {
           tutorialStep = 5;
           updateTutorialHud();
           audio.playBoost();
@@ -526,6 +553,8 @@ function animate(now) {
     player.grounded = false;
     player.diving = false;
     player.pos.z += 48 * dt;
+    if (player.pos.z > 1350) player.pos.z = 80;
+
     player.pos.x = world.pathX(player.pos.z) + Math.sin(now * 0.0008) * 16;
     player.pos.y = world.h(player.pos.x, player.pos.z) + 6.0 + Math.cos(now * 0.0014) * 2.5;
     player._animateZoe(dt, -0.08);
@@ -538,12 +567,13 @@ function animate(now) {
     const orbitDist = 11.5 + Math.sin(now * 0.0006) * 2.5;
     camera.fov = 74;
     camera.updateProjectionMatrix();
+    // Offset camera position to beautifully frame Zoe on the right half of the screen
     camera.position.set(
-      player.pos.x + Math.sin(orbitAngle) * orbitDist,
-      player.pos.y + 3.4 + Math.cos(now * 0.0008) * 1.2,
+      player.pos.x - 3.2 + Math.sin(orbitAngle) * orbitDist,
+      player.pos.y + 2.8 + Math.cos(now * 0.0008) * 1.2,
       player.pos.z - Math.cos(orbitAngle) * orbitDist
     );
-    camera.lookAt(player.pos.x, player.pos.y + 1.8, player.pos.z + 20);
+    camera.lookAt(player.pos.x + 0.8, player.pos.y + 1.2, player.pos.z);
   }
 
   world.update(player.pos, dt, camera);

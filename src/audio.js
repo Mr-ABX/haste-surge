@@ -21,8 +21,14 @@ export class SoundEngine {
     // Wind noise nodes
     this.windGain = null;
     this.windFilter = null;
-    this.diveWhistleGain = null;
-    this.diveWhistleFilter = null;
+    this.chords = [
+      [293.66, 349.23, 440.0, 523.25, 659.25], // Dm9: D4, F4, A4, C5, E5
+      [233.08, 293.66, 349.23, 440.0, 587.33], // Bbmaj7: Bb3, D4, F4, A4, D5
+      [174.61, 261.63, 349.23, 440.0, 523.25], // Fmaj9: F3, C4, F4, A4, C5
+      [261.63, 329.63, 392.0, 493.88, 587.33], // C9/G: C4, E4, G4, B4, D5
+    ];
+    this.bassNotes = [73.42, 58.27, 43.65, 65.41]; // D2, Bb1, F1, C2
+    this.noiseBuffer = null;
   }
 
   init() {
@@ -36,6 +42,7 @@ export class SoundEngine {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
     this.ctx = new AudioCtx();
+    this.playing = true;
 
     // Master Dynamics Compressor to prevent clipping and give punch
     this.masterComp = this.ctx.createDynamicsCompressor();
@@ -48,7 +55,7 @@ export class SoundEngine {
     // Master Filter (opens up with speed, smooth low-pass in menus)
     this.masterFilter = this.ctx.createBiquadFilter();
     this.masterFilter.type = 'lowpass';
-    this.masterFilter.frequency.setValueAtTime(1200, this.ctx.currentTime);
+    this.masterFilter.frequency.setValueAtTime(this.inMenu ? 850 : 3800, this.ctx.currentTime);
     this.masterFilter.Q.setValueAtTime(0.7, this.ctx.currentTime);
 
     this.masterGain = this.ctx.createGain();
@@ -58,11 +65,10 @@ export class SoundEngine {
     this.masterComp.connect(this.masterGain);
     this.masterGain.connect(this.ctx.destination);
 
-    // Continuous Rushing Wind Noise Generator
+    // Shared Noise Buffer (reused across wind, snares, hats, and boost roar to eliminate GC churn)
     const bufSize = this.ctx.sampleRate * 2;
-    const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    // Pinkish noise curve
+    this.noiseBuffer = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
+    const data = this.noiseBuffer.getChannelData(0);
     let b0 = 0, b1 = 0, b2 = 0;
     for (let i = 0; i < bufSize; i++) {
       const white = Math.random() * 2 - 1;
@@ -73,7 +79,7 @@ export class SoundEngine {
     }
 
     const noise = this.ctx.createBufferSource();
-    noise.buffer = buf;
+    noise.buffer = this.noiseBuffer;
     noise.loop = true;
 
     this.windFilter = this.ctx.createBiquadFilter();
@@ -136,70 +142,66 @@ export class SoundEngine {
 
   startBreakbeat() {
     if (this.timer) clearInterval(this.timer);
-    // 174 BPM 16th-note liquid DnB step sequencer
-    const stepMs = (60 / 174 / 4) * 1000;
-
-    // Liquid DnB Chord Voicings (Dm9 -> Bbmaj7 -> Fmaj9 -> C9)
-    const chords = [
-      [293.66, 349.23, 440.0, 523.25, 659.25], // Dm9: D4, F4, A4, C5, E5
-      [233.08, 293.66, 349.23, 440.0, 587.33], // Bbmaj7: Bb3, D4, F4, A4, D5
-      [174.61, 261.63, 349.23, 440.0, 523.25], // Fmaj9: F3, C4, F4, A4, C5
-      [261.63, 329.63, 392.0, 493.88, 587.33], // C9/G: C4, E4, G4, B4, D5
-    ];
-
-    const bassNotes = [73.42, 58.27, 43.65, 65.41]; // D2, Bb1, F1, C2
+    // 174 BPM 16th-note Liquid DnB Sample-Accurate Lookahead Scheduler
+    const stepDuration = 60 / 174 / 4;
+    let nextStepTime = this.ctx.currentTime + 0.05;
 
     this.timer = setInterval(() => {
       if (!this.ctx || this.muted || !this.playing || this.customAudio) return;
-      const now = this.ctx.currentTime;
-      const s = this.step % 16;
-      const bar = Math.floor(this.step / 16) % chords.length;
-      const vol = this.inMenu ? 0.45 : 1.0;
-
-      // KICK: Step 0 & Step 10 (Classic syncopated liquid 2-step)
-      if (s === 0 || s === 10) {
-        this._kick(now, vol);
+      while (nextStepTime < this.ctx.currentTime + 0.12) {
+        this._scheduleStep(nextStepTime);
+        nextStepTime += stepDuration;
       }
+    }, 25);
+  }
 
-      // SNARE: Step 4 & Step 12 (Hard 2 and 4 backbeats)
-      if (s === 4 || s === 12) {
-        this._snare(now, 1.0 * vol);
-      }
-      // GHOST SNARES: Steps 7 & 15 (Liquid breakbeat shuffle)
-      if (s === 7 || s === 15) {
-        this._snare(now, 0.22 * vol, true);
-      }
+  _scheduleStep(time) {
+    const s = this.step % 16;
+    const bar = Math.floor(this.step / 16) % this.chords.length;
+    const vol = this.inMenu ? 0.42 : 1.0;
 
-      // HI-HATS: Shuffling 16ths
-      if (s % 2 === 0) {
-        const isOpen = s === 2 || s === 6 || s === 14;
-        this._hat(now, (isOpen ? 0.08 : 0.04) * vol, isOpen);
-      } else if (!this.inMenu) {
-        // Fast ghost tick
-        this._hat(now, 0.02 * vol, false);
-      }
+    // KICK: Step 0 & Step 10 (Classic syncopated liquid 2-step)
+    if (s === 0 || s === 10) {
+      this._kick(time, vol);
+    }
 
-      // ROLLING REESE SUB-BASS (8th notes)
-      if (s % 4 === 0) {
-        const freq = bassNotes[bar];
-        this._reeseBass(now, freq, 0.22, 0.18 * vol);
-      }
+    // SNARE: Step 4 & Step 12 (Hard 2 and 4 backbeats)
+    if (s === 4 || s === 12) {
+      this._snare(time, 1.0 * vol);
+    }
+    // GHOST SNARES: Steps 7 & 15 (Liquid breakbeat shuffle)
+    if (s === 7 || s === 15) {
+      this._snare(time, 0.22 * vol, true);
+    }
 
-      // LUSH ATMOSPHERIC LIQUID CHORD PAD
-      if (s === 0 || s === 8) {
-        const chord = chords[bar];
-        this._liquidChord(now, chord, 0.55, 0.038 * vol);
-      }
+    // HI-HATS: Shuffling 16ths
+    if (s % 2 === 0) {
+      const isOpen = s === 2 || s === 6 || s === 14;
+      this._hat(time, (isOpen ? 0.08 : 0.04) * vol, isOpen);
+    } else if (!this.inMenu) {
+      this._hat(time, 0.02 * vol, false);
+    }
 
-      // SPARKLE ARPEGGIO ACCENTS
-      if (s % 2 === 1 && !this.inMenu) {
-        const chord = chords[bar];
-        const note = chord[(s + bar) % chord.length];
-        this._synthPluck(now, note * 1.5, 0.025 * vol);
-      }
+    // ROLLING REESE SUB-BASS (8th notes)
+    if (s % 4 === 0) {
+      const freq = this.bassNotes[bar];
+      this._reeseBass(time, freq, 0.24, 0.18 * vol);
+    }
 
-      this.step++;
-    }, stepMs);
+    // LUSH ATMOSPHERIC LIQUID CHORD PAD
+    if (s === 0 || s === 8) {
+      const chord = this.chords[bar];
+      this._liquidChord(time, chord, 0.65, 0.038 * vol);
+    }
+
+    // SPARKLE ARPEGGIO ACCENTS
+    if (s % 2 === 1 && !this.inMenu) {
+      const chord = this.chords[bar];
+      const note = chord[(s + bar) % chord.length];
+      this._synthPluck(time, note * 1.5, 0.025 * vol);
+    }
+
+    this.step++;
   }
 
   updateSpeed(speed, isDiving = false) {
@@ -252,12 +254,8 @@ export class SoundEngine {
 
     // Snappy noise burst
     const dur = isGhost ? 0.04 : 0.11;
-    const buf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-
     const noise = this.ctx.createBufferSource();
-    noise.buffer = buf;
+    noise.buffer = this.noiseBuffer || this.ctx.createBuffer(1, 100, this.ctx.sampleRate);
     const flt = this.ctx.createBiquadFilter();
     flt.type = 'highpass';
     flt.frequency.setValueAtTime(900, t);
@@ -268,16 +266,13 @@ export class SoundEngine {
     noise.connect(flt);
     flt.connect(gNoise);
     gNoise.connect(this.masterFilter);
-    noise.start(t);
+    noise.start(t, Math.random() * 0.5, dur);
   }
 
   _hat(t, vol = 0.04, isOpen = false) {
     const dur = isOpen ? 0.09 : 0.035;
-    const buf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     const noise = this.ctx.createBufferSource();
-    noise.buffer = buf;
+    noise.buffer = this.noiseBuffer || this.ctx.createBuffer(1, 100, this.ctx.sampleRate);
     const flt = this.ctx.createBiquadFilter();
     flt.type = 'highpass';
     flt.frequency.setValueAtTime(6500, t);
@@ -287,7 +282,7 @@ export class SoundEngine {
     noise.connect(flt);
     flt.connect(g);
     g.connect(this.masterFilter);
-    noise.start(t);
+    noise.start(t, Math.random() * 0.5, dur);
   }
 
   _reeseBass(t, freq, dur, vol = 0.16) {
@@ -464,11 +459,8 @@ export class SoundEngine {
 
     // Jet thrust roar
     const dur = 0.3;
-    const buf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     const noise = this.ctx.createBufferSource();
-    noise.buffer = buf;
+    noise.buffer = this.noiseBuffer || this.ctx.createBuffer(1, 100, this.ctx.sampleRate);
     const flt = this.ctx.createBiquadFilter();
     flt.type = 'bandpass';
     flt.frequency.setValueAtTime(650, t);
@@ -479,7 +471,7 @@ export class SoundEngine {
     noise.connect(flt);
     flt.connect(gNoise);
     gNoise.connect(this.masterComp);
-    noise.start(t);
+    noise.start(t, Math.random() * 0.5, dur);
   }
 
   playSpark() {

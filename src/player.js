@@ -315,9 +315,9 @@ export class Player {
     const z = 0;
     const x = world.pathX(z);
     const y = world.h(x, z);
-    this.pos.set(x, y + 0.5, z);
-    this.vel.set(0, 0, 62);
-    this.speed = 62;
+    this.pos.set(x, y, z);
+    this.vel.set(0, 0, 52);
+    this.speed = 52;
     this.grounded = true;
     this.diving = false;
     this.airTime = 0;
@@ -362,7 +362,7 @@ export class Player {
 
     const [gx, gz] = world.grad(this.pos.x, this.pos.z);
 
-    // Holding Space / Left-Click / S triggers Fast-Fall Dive!
+    // Holding Space / Left-Click / S triggers Fast-Fall Dive when airborne!
     const wantDive = Boolean(input.dive);
     this.diving = !this.grounded && wantDive;
 
@@ -370,58 +370,69 @@ export class Player {
       this.airTime = 0;
 
       // Player-controlled forward momentum:
-      // Holding forward actively drives sprint strides; otherwise maintains natural coasting pace
-      const isPushingForward = input.forward || input.jump;
-      const sprintDrive = isPushingForward ? 36 : 22;
-      const baseSprintPace = (this.boardActive > 0 ? 140 : 66) * this.stats.topSpeedMult;
+      // Holding forward actively drives sprint strides; letting go coasts smoothly toward jogging pace
+      const isPushingForward = Boolean(input.forward || this.boardActive > 0);
+      const baseSprintPace = (this.boardActive > 0 ? 140 : 68) * this.stats.topSpeedMult;
+      const coastingPace = 24 * this.stats.topSpeedMult;
 
-      if (this.speed < baseSprintPace) {
-        this.speed += sprintDrive * dt;
+      if (isPushingForward) {
+        if (this.speed < baseSprintPace) {
+          this.speed += 38 * dt;
+        }
+      } else if (Math.abs(gz) < 0.05 && this.speed > coastingPace) {
+        // Natural coasting deceleration on flat ground when not pushing forward
+        this.speed -= 16 * dt;
       }
 
       // Slope Physics: Downhill accelerates, uphill decelerates
       // gz < 0 is downhill in +Z travel direction; gz > 0 is uphill
       const diveGripMult = wantDive && gz < 0 ? 1.6 : 1.0;
-      const slopeForce = gz < 0 ? -gz * 125 * diveGripMult : -gz * 95;
+      const slopeForce = gz < 0 ? -gz * 135 * diveGripMult : -gz * 105;
       this.speed += slopeForce * dt;
 
       // Natural aerodynamic drag for speeds exceeding standard cruising
-      const dragFactor = this.boardActive > 0 ? 0.015 : 0.045;
+      const dragFactor = this.boardActive > 0 ? 0.012 : 0.038;
       const excessSpeed = Math.max(0, this.speed - baseSprintPace);
       this.speed -= excessSpeed * dragFactor * dt;
 
       // Minimum and maximum speed limits
-      this.speed = THREE.MathUtils.clamp(this.speed, 38, 205 * this.stats.topSpeedMult);
+      this.speed = THREE.MathUtils.clamp(this.speed, 18, 208 * this.stats.topSpeedMult);
 
       this.vel.z = this.speed;
+      const prevX = this.pos.x;
+      const prevY = this.pos.y;
+      const prevZ = this.pos.z;
+
       this.pos.x += this.vel.x * dt;
       this.pos.z += this.vel.z * dt;
 
       const newGroundY = world.h(this.pos.x, this.pos.z);
-      const [, ngz] = world.grad(this.pos.x, this.pos.z);
+      const [ngx, ngz] = world.grad(this.pos.x, this.pos.z);
+      const groundSlopeVel = ngx * this.vel.x + ngz * this.vel.z;
 
       if (input.jump) {
-        // Active Hop / Jump
+        // Active Hop / Jump (consumes jump so holding key doesn't loop)
+        input.jump = false;
         this.grounded = false;
-        this.vel.y = Math.max(ngz * this.vel.z, 0) + 26;
+        this.vel.y = Math.max(groundSlopeVel, 0) + 26;
         this.pos.y = newGroundY + 0.35;
         audio?.playJump();
       } else {
-        // Natural Hill-Crest Launch:
-        // When running over a convex crest at speed, ground falls away faster than gravity
-        const expectedY = this.pos.y + gz * this.vel.z * dt;
-        const dropRate = (expectedY - newGroundY) / Math.max(dt, 0.001);
-        const launchThreshold = wantDive ? 38 : 11;
+        // Physical Hill-Crest Launch:
+        // Evaluates downward curvature acceleration of the ground relative to 3D tangent path
+        const expectedY = prevY + (gx * this.vel.x + gz * this.vel.z) * dt;
+        const downwardAccel = (expectedY - newGroundY) / (0.5 * Math.max(dt * dt, 0.00001));
+        const launchThreshold = wantDive ? 52 : 24;
 
-        if (dropRate > launchThreshold && this.speed > 56) {
+        if (downwardAccel > launchThreshold && this.speed > 48) {
           this.grounded = false;
-          // Launch velocity scales with speed and crest drop
-          const crestLift = Math.min((this.speed - 50) * 0.12, 12);
-          this.vel.y = Math.max(gz * this.vel.z + 8, 5) + crestLift;
-          this.pos.y = newGroundY + 0.3;
+          // Launch velocity scales with speed and crest slope
+          const crestLift = Math.min((this.speed - 42) * 0.14, 14);
+          this.vel.y = Math.max(gx * this.vel.x + gz * this.vel.z, 0) + 4 + crestLift;
+          this.pos.y = newGroundY + 0.25;
         } else {
           this.pos.y = newGroundY;
-          this.vel.y = ngz * this.vel.z;
+          this.vel.y = groundSlopeVel;
         }
       }
     } else {
@@ -432,7 +443,7 @@ export class Player {
 
       if (this.diving) {
         // Fast-Fall Dive converts altitude into forward and downward velocity
-        this.vel.z += 32 * dt;
+        this.vel.z += (38 + Math.abs(this.vel.y) * 0.12) * dt;
         this.vel.y = Math.max(this.vel.y, -145);
       } else {
         // Eagle-Glide Lift: Aerodynamic forward velocity provides upward glide floatiness
@@ -466,37 +477,37 @@ export class Player {
 
         if (this.airTime > 0.16) {
           // PERFECT LANDING: Cleanly aligned with a steep downhill landing chute
-          if (isSteepDownhill && (slopeAngleDiff < 0.25 || impactDot < 0.28)) {
-            const diveBonus = Math.abs(this.vel.y) * 0.32;
+          if (isSteepDownhill && (slopeAngleDiff < 0.38 || impactDot < 0.38)) {
+            const diveBonus = Math.abs(this.vel.y) * 0.35;
             const boost = (28 + Math.min(this.airTime * 18, 30) + diveBonus) * this.stats.boostPower;
-            this.speed = Math.min(208 * this.stats.topSpeedMult, Math.max(this.speed, this.vel.z) + boost);
-            this.energy = Math.min(this.maxEnergy, this.energy + 28 * this.stats.energyGain);
-            this.triggerLandingFX('#88ff66', 15);
+            this.speed = Math.min(212 * this.stats.topSpeedMult, Math.max(this.speed, this.vel.z) + boost);
+            this.energy = Math.min(this.maxEnergy, this.energy + 30 * this.stats.energyGain);
+            this.triggerLandingFX('#88ff66', 16);
             audio?.playLanding('perfect');
-            onLanding?.('Perfect', 'rgba(155, 245, 110, 0.88)', boost);
+            onLanding?.('Perfect', 'rgba(155, 245, 110, 0.95)', boost);
 
           // GOOD LANDING: Moderate downslope alignment or smooth gentle touchdown
-          } else if ((isDownhill && impactDot < 0.52) || (impactDot < 0.44 && Math.abs(this.vel.y) < 28)) {
-            const boost = (14 + Math.min(this.airTime * 9, 16)) * this.stats.boostPower;
-            this.speed = Math.min(185 * this.stats.topSpeedMult, this.speed + boost);
-            this.energy = Math.min(this.maxEnergy, this.energy + 14 * this.stats.energyGain);
-            this.triggerLandingFX('#66f0ff', 11);
+          } else if ((isDownhill && impactDot < 0.54) || (impactDot < 0.46 && Math.abs(this.vel.y) < 30)) {
+            const boost = (14 + Math.min(this.airTime * 9, 18)) * this.stats.boostPower;
+            this.speed = Math.min(188 * this.stats.topSpeedMult, this.speed + boost);
+            this.energy = Math.min(this.maxEnergy, this.energy + 15 * this.stats.energyGain);
+            this.triggerLandingFX('#66f0ff', 12);
             audio?.playLanding('good');
-            onLanding?.('Good', 'rgba(100, 240, 255, 0.82)', boost);
+            onLanding?.('Good', 'rgba(100, 240, 255, 0.90)', boost);
 
           // OK LANDING: Flat ground landing with low downward speed
           } else if (impactDot < 0.65 && Math.abs(this.vel.y) < 32 && Math.abs(lgz) <= 0.06) {
-            this.speed = Math.max(50, this.speed * 0.90);
+            this.speed = Math.max(48, this.speed * 0.90);
             this.triggerLandingFX('#ffd15c', 8);
             audio?.playLanding('ok');
-            onLanding?.('Ok', 'rgba(255, 215, 95, 0.75)', -5);
+            onLanding?.('Ok', 'rgba(255, 215, 95, 0.85)', -5);
 
           // BAD LANDING: Crashed into flat ground with high downward speed, or crashed into an uphill slope
           } else {
-            this.speed = Math.max(38, this.speed * 0.58);
-            this.triggerLandingFX('#ff4238', 10);
+            this.speed = Math.max(32, this.speed * 0.56);
+            this.triggerLandingFX('#ff4238', 11);
             audio?.playLanding('bad');
-            onLanding?.('Bad', 'rgba(255, 66, 56, 0.88)', -28);
+            onLanding?.('Bad', 'rgba(255, 66, 56, 0.92)', -28);
           }
         }
         this.vel.z = this.speed;
