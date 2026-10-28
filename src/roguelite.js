@@ -1,5 +1,15 @@
 // Shard Campaign & Roguelite Relics (Clean SVG painted icons, zero generic emojis)
 
+export const TUTORIAL_STAGE = {
+  stage: 0,
+  isTutorial: true,
+  biome: 'verdant',
+  title: 'TRAINING SHARD // MOVEMENT BASICS',
+  length: 1550,
+  boss: null,
+  wallSpeed: 0, // Wall disabled in tutorial mode
+};
+
 export const SHARD_CAMPAIGN = [
   {
     stage: 1,
@@ -7,7 +17,7 @@ export const SHARD_CAMPAIGN = [
     title: 'SHARD 01 // VERDANT EXPANSE',
     length: 1650,
     boss: null,
-    wallSpeed: 54,
+    wallSpeed: 52,
   },
   {
     stage: 2,
@@ -15,7 +25,7 @@ export const SHARD_CAMPAIGN = [
     title: 'SHARD 01 // JUMPER ENCOUNTER',
     length: 2050,
     boss: 'jumper',
-    wallSpeed: 58,
+    wallSpeed: 56,
   },
   {
     stage: 3,
@@ -23,7 +33,7 @@ export const SHARD_CAMPAIGN = [
     title: 'SHARD 01 // CHRONOS RING-TITAN',
     length: 2150,
     boss: 'chronos',
-    wallSpeed: 62,
+    wallSpeed: 60,
   },
   {
     stage: 4,
@@ -31,7 +41,7 @@ export const SHARD_CAMPAIGN = [
     title: 'SHARD 02 // SCORCHED DUNES',
     length: 1700,
     boss: null,
-    wallSpeed: 60,
+    wallSpeed: 58,
   },
   {
     stage: 5,
@@ -39,7 +49,7 @@ export const SHARD_CAMPAIGN = [
     title: 'SHARD 02 // DUNE LEVIATHAN',
     length: 2100,
     boss: 'leviathan',
-    wallSpeed: 64,
+    wallSpeed: 62,
   },
   {
     stage: 6,
@@ -47,7 +57,7 @@ export const SHARD_CAMPAIGN = [
     title: 'SHARD 02 // SOLARIS MONOLITH',
     length: 2250,
     boss: 'solaris',
-    wallSpeed: 68,
+    wallSpeed: 66,
   },
 ];
 

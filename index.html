@@ -394,6 +394,104 @@
       font-style: italic; color: #f5d742;
     }
 
+    .blade-btn.blade-primary {
+      border-left: 6px solid #f5d742;
+      background: linear-gradient(90deg, rgba(24, 36, 58, 0.94) 0%, rgba(16, 24, 38, 0.88) 100%);
+      box-shadow: 0 10px 30px rgba(245, 215, 66, 0.22);
+    }
+    .blade-btn.blade-primary:hover {
+      background: #f5d742;
+      color: #101826;
+      border-left-color: #ffffff;
+      box-shadow: 0 12px 36px rgba(245, 215, 66, 0.45);
+    }
+    .blade-btn.blade-primary:hover .blade-meta {
+      opacity: 0.9;
+      color: #101826;
+    }
+
+    /* Speedometer dynamic speed heat */
+    .speed-cluster.speed-fast #hud-speed { color: #f5d742; }
+    .speed-cluster.speed-hyper #hud-speed {
+      color: #26f0ff;
+      text-shadow: 0 0 16px rgba(38, 240, 255, 0.8);
+    }
+
+    /* ==========================================================================
+       INTERACTIVE TUTORIAL OBJECTIVE HUD
+       ========================================================================== */
+    #tutorial-hud {
+      position: absolute; top: 24px; left: 50%;
+      transform: translateX(-50%) skewX(-8deg);
+      background: rgba(12, 18, 30, 0.92);
+      border: 1.5px solid rgba(38, 240, 255, 0.65);
+      border-left: 5px solid #26f0ff;
+      padding: 12px 28px;
+      text-align: center;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 20px rgba(38, 240, 255, 0.25);
+      pointer-events: none;
+      transition: opacity 0.2s, transform 0.2s;
+      max-width: 620px; width: 90vw;
+    }
+    #tutorial-hud.hidden {
+      display: none;
+    }
+    .tut-badge {
+      font-size: 11px; font-weight: 900; letter-spacing: 2px;
+      color: #26f0ff; text-transform: uppercase; margin-bottom: 2px;
+    }
+    #tut-title {
+      font-family: 'Archivo Black', 'Inter', sans-serif;
+      font-size: 20px; font-style: italic; letter-spacing: 0.5px;
+      color: #ffffff; text-transform: uppercase; margin-bottom: 4px;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.6);
+    }
+    #tut-desc {
+      font-size: 13px; font-weight: 700; color: #d0e4ff; line-height: 1.35;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    }
+    .tut-dots {
+      display: flex; justify-content: center; gap: 8px; margin-top: 8px;
+    }
+    .tut-dot {
+      width: 22px; height: 18px; line-height: 18px;
+      font-size: 10px; font-weight: 900; font-style: italic;
+      background: rgba(255, 255, 255, 0.12);
+      color: rgba(255, 255, 255, 0.6);
+      border-radius: 2px;
+    }
+    .tut-dot.done {
+      background: #26f0ff; color: #0a121e;
+    }
+    .tut-dot.active {
+      background: #f5d742; color: #0a121e;
+      box-shadow: 0 0 10px rgba(245, 215, 66, 0.6);
+      transform: scale(1.15);
+    }
+
+    /* ==========================================================================
+       TUTORIAL COMPLETE CELEBRATION MODAL
+       ========================================================================== */
+    #tutorial-modal {
+      position: fixed; inset: 0; z-index: 25;
+      background: rgba(8, 14, 24, 0.85);
+      backdrop-filter: blur(12px);
+      display: flex; align-items: center; justify-content: center;
+      padding: 32px;
+    }
+    #tutorial-modal.hidden {
+      display: none;
+    }
+    .tut-complete-box {
+      background: rgba(16, 24, 38, 0.94);
+      border: 1.5px solid rgba(255, 255, 255, 0.2);
+      border-left: 6px solid #f5d742;
+      padding: 36px 44px;
+      max-width: 640px; width: 100%;
+      transform: skewX(-6deg);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.85), 0 0 35px rgba(245, 215, 66, 0.25);
+    }
+
     /* ==========================================================================
        SHARD CLEAR / MANIFEST RELICS SCREEN
        ========================================================================== */
@@ -472,6 +570,20 @@
     <!-- Center-Lower Landing Grade Callout ("Perfect", Screenshot 1) -->
     <div id="hud-callout">Perfect</div>
 
+    <!-- Interactive Tutorial Guidance Panel -->
+    <div id="tutorial-hud" class="hidden">
+      <div class="tut-badge">TRAINING SHARD // <span id="tut-step-num">STEP 1 / 5</span></div>
+      <div id="tut-title">1. SPRINT &amp; STEER</div>
+      <div id="tut-desc">Use [A] / [D] or [◀] / [▶] to steer along the spark trail. Hold [W] / [▲] to drive forward!</div>
+      <div class="tut-dots">
+        <span class="tut-dot active" id="tut-dot-1">1</span>
+        <span class="tut-dot" id="tut-dot-2">2</span>
+        <span class="tut-dot" id="tut-dot-3">3</span>
+        <span class="tut-dot" id="tut-dot-4">4</span>
+        <span class="tut-dot" id="tut-dot-5">5</span>
+      </div>
+    </div>
+
     <!-- Bottom-Center Haste Cluster -->
     <div class="bottom-cluster">
       <div class="distance-wrap">
@@ -517,6 +629,11 @@
     </div>
 
     <div class="menu-blades">
+      <button class="blade-btn blade-primary" id="btn-start-tutorial">
+        <span class="blade-title">▶ TUTORIAL // MOVEMENT BASICS</span>
+        <span class="blade-meta">RUNNING, CREST FLIGHT, FAST-FALL DIVE &amp; SLOPE BOOSTS</span>
+      </button>
+
       <button class="blade-btn" data-start-stage="0">
         <span class="blade-title">ENTER SHARD 01 // VERDANT EXPANSE</span>
         <span class="blade-meta">EMERALD HILLS, SAKURA CANOPIES &amp; ANCIENT RINGS</span>
@@ -579,6 +696,29 @@
         <button class="mini-blade" id="btn-shop-menu">RETURN TO TITLE</button>
         <button class="blade-btn" id="btn-next-stage" style="padding:12px 32px;">
           <span class="blade-title">LAUNCH NEXT SHARD ➔</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TUTORIAL COMPLETED CELEBRATION MODAL -->
+  <div id="tutorial-modal" class="hidden">
+    <div class="tut-complete-box">
+      <div class="title-kicker">TRAINING COMPLETE</div>
+      <div class="title-main" style="font-size:46px; margin: 6px 0 12px; line-height: 0.95;">COURIER CERTIFIED</div>
+      <p style="font-size: 14px; color: #b5cbe8; line-height: 1.5; margin-bottom: 20px;">
+        You have mastered momentum physics: crest launching, airborne eagle glide, fast-fall diving, and downhill slope boosts. You are ready to breach the shattered worlds!
+      </p>
+      <div class="spark-row" style="color: #26f0ff; font-size: 26px; font-weight: 900; margin-bottom: 26px;">
+        <svg class="spark-star" style="width:24px;height:24px;" viewBox="0 0 24 24">
+          <path d="M12 1L15 9L23 12L15 15L12 23L9 15L1 12L9 9Z"/>
+        </svg>
+        <span>+250 SPARKS CLAIMED</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap: 14px;">
+        <button class="mini-blade" id="btn-tut-menu">RETURN TO TITLE</button>
+        <button class="blade-btn blade-primary" id="btn-tut-shard1" style="padding: 12px 28px;">
+          <span class="blade-title">LAUNCH SHARD 01 ➔</span>
         </button>
       </div>
     </div>

@@ -88,9 +88,10 @@ export class World {
     this._buildWall();
   }
 
-  setLevel(biomeKey, seed, length) {
+  setLevel(biomeKey, seed, length, isTutorial = false) {
     for (const c of this.chunks.values()) this._disposeChunk(c);
     this.chunks.clear();
+    this.isTutorial = Boolean(isTutorial);
     this.biome = BIOMES[biomeKey];
     this.kit = getKit(biomeKey);
     this.seed = seed;
@@ -119,16 +120,59 @@ export class World {
     this.spire.visible = biomeKey === 'verdant';
     this.rift.visible = biomeKey === 'scorched';
 
+    if (this.tutorialGates) {
+      this.tutorialGates.visible = this.isTutorial;
+      if (this.isTutorial) {
+        this.tutorialGateMeshes.forEach((gate, idx) => {
+          const gz = this.tutorialZPositions[idx];
+          const gx = this.pathX(gz);
+          const gy = this.h(gx, gz);
+          gate.position.set(gx, gy + 1.2, gz);
+        });
+      }
+    }
+
     this.setPortal(Number.isFinite(length) ? length : Infinity);
     for (let i = -2; i <= 6; i++) this._ensureChunk(i);
   }
 
   pathX(z) {
+    if (this.isTutorial) {
+      return Math.sin(z / 180) * 12;
+    }
     const s = this.seed;
     return perlin.noise(z / 820, 3.7, s) * 210 + perlin.noise(z / 240, 9.1, s) * 38;
   }
 
   h(x, z) {
+    if (this.isTutorial) {
+      let y = 14;
+      if (z < 250) {
+        // Section 1: Gentle rolling turf for steering basics
+        y += Math.sin(z / 45) * 2.2;
+      } else if (z < 560) {
+        // Section 2: First Crest Launch Hill
+        // Smooth ramp rising to peak at z = 390 (+24m) then sharp drop-off at 410-520
+        const u = (z - 390) / 85;
+        const crest = Math.exp(-u * u) * 25;
+        y += crest - Math.max(0, z - 410) * 0.12;
+      } else if (z < 1050) {
+        // Section 3 & 4: The Great Crest & Dive Valley
+        // High launch cliff peak at z = 670 (+36m)
+        const u = (z - 670) / 75;
+        const launchPeak = Math.exp(-u * u) * 36;
+        // Steep downhill landing slope dropping by 38m (slope dz ~ -0.36)
+        const drop = Math.min(38, Math.max(0, z - 690) * 0.36);
+        y += launchPeak - drop;
+      } else {
+        // Section 5: Portal Runway
+        y += 8 + Math.sin(z / 70) * 2.0;
+      }
+      const d = (x - this.pathX(z)) / 85;
+      y += d * d * 16;
+      return y;
+    }
+
     const t = this.t, s = this.seed;
     let y = -z * t.downhill;
     if (t.ridged) {
@@ -137,9 +181,11 @@ export class World {
       y += r * r * t.big;
       y += perlin.noise(x / t.midScale, z / t.midScale, s + 2.1) * t.mid;
     } else {
-      // Smooth rolling wave hills ideal for Haste diving & crest jumping
+      // Dynamic rolling wave hills with steep downhill landing zones
       y += perlin.noise(x / t.bigScale, z / t.bigScale, s + 1.3) * t.big;
-      y += Math.sin(z / 52 + perlin.noise(x / 180, z / 180, s) * 2.2) * 14;
+      const wave = Math.sin(z / 48 + perlin.noise(x / 160, z / 160, s) * 1.8);
+      // Downhill slopes are steeper for high-speed dive landings
+      y += (wave > 0 ? wave * 1.05 : wave * 1.38) * 16.5;
       y += perlin.noise(x / t.midScale, z / t.midScale, s + 2.1) * t.mid;
     }
     y += perlin.noise(x / t.smallScale, z / t.smallScale, s + 3.7) * t.small;
@@ -273,7 +319,53 @@ export class World {
 
     // 4-Pointed Star Sparks in sweeping sky-arcs & downhill ribbons (Screenshot 2)
     const sparks = [];
-    if (z0 > 90 && z0 + CL < this.length - 80) {
+    if (this.isTutorial) {
+      // Tutorial-specific instructional spark paths:
+      // 1. Z: 40 to 220 - Ground slalom for steering
+      if (z0 <= 220 && z0 + CL >= 40) {
+        for (let j = 0; j < 14; j++) {
+          const z = z0 + j * 15;
+          if (z >= 40 && z <= 220) {
+            const ox = Math.sin(z * 0.07) * 12;
+            const x = this.pathX(z) + ox;
+            sparks.push({ x, y: this.h(x, z) + 1.8, z, scale: 1.15, alive: true });
+          }
+        }
+      }
+      // 2. Z: 380 to 520 - High airborne crest launch arc
+      if (z0 <= 540 && z0 + CL >= 370) {
+        for (let j = 0; j < 16; j++) {
+          const z = z0 + j * 12;
+          if (z >= 370 && z <= 520) {
+            const u = (z - 370) / 150;
+            const x = this.pathX(z);
+            sparks.push({ x, y: this.h(x, z) + 3.0 + Math.sin(u * Math.PI) * 16, z, scale: 1.25, alive: true });
+          }
+        }
+      }
+      // 3. Z: 680 to 920 - Fast-fall dive downhill chute
+      if (z0 <= 920 && z0 + CL >= 680) {
+        for (let j = 0; j < 18; j++) {
+          const z = z0 + j * 12;
+          if (z >= 680 && z <= 920) {
+            const x = this.pathX(z);
+            sparks.push({ x, y: this.h(x, z) + 2.2, z, scale: 1.2, alive: true });
+          }
+        }
+      }
+      // 4. Z: 1050 to 1440 - Speedway lanes to Portal
+      if (z0 <= 1450 && z0 + CL >= 1050) {
+        for (let j = 0; j < 15; j++) {
+          const z = z0 + j * 26;
+          if (z >= 1050 && z <= 1440) {
+            [-6, 0, 6].forEach((ox) => {
+              const x = this.pathX(z) + ox;
+              sparks.push({ x, y: this.h(x, z) + 1.8, z, scale: 1.05, alive: true });
+            });
+          }
+        }
+      }
+    } else if (z0 > 90 && z0 + CL < this.length - 80) {
       const arcs = 3;
       for (let a = 0; a < arcs; a++) {
         const zs = z0 + (a / arcs) * CL * 0.82 + 12;
@@ -459,6 +551,58 @@ export class World {
     this.spire = spire;
     this.scene.add(spire);
 
+    // Floating Shattered World Megastructures / Broken Islands (Lore: Haste Broken Worlds)
+    this.skyFragments = new THREE.Group();
+    const fragMat = toon('#4a6886', true);
+    const runeMat = additive('#32ecff', 0.85);
+    const fragGeo = new THREE.DodecahedronGeometry(22, 1);
+    fragGeo.scale(2.2, 0.72, 1.4);
+    const runeRingGeo = new THREE.TorusGeometry(28, 1.4, 6, 24);
+
+    this.fragData = [];
+    for (let i = 0; i < 7; i++) {
+      const g = new THREE.Group();
+      const rock = new THREE.Mesh(fragGeo, fragMat);
+      const rRing = new THREE.Mesh(runeRingGeo, runeMat);
+      rRing.rotation.x = Math.PI / 2 + 0.15;
+      g.add(rock, rRing);
+      const dist = 780 + i * 260;
+      const ang = (i / 7) * Math.PI * 2 + 0.4;
+      const basePos = new THREE.Vector3(
+        Math.cos(ang) * dist,
+        280 + (i % 3) * 110,
+        Math.sin(ang) * dist
+      );
+      g.position.copy(basePos);
+      g.scale.setScalar(0.75 + (i % 3) * 0.4);
+      this.skyFragments.add(g);
+      this.fragData.push({ group: g, basePos, rotSpeed: 0.12 + (i % 3) * 0.06 });
+    }
+    this.scene.add(this.skyFragments);
+
+    // Holographic Tutorial Landing Arches with Downward Chevrons (Guides Step 4)
+    this.tutorialGates = new THREE.Group();
+    const archMat = additive('#4eff7a', 0.92);
+    const chevMat = additive('#ffffff', 0.95);
+    const archGeo = new THREE.TorusGeometry(16, 0.75, 8, 32, Math.PI);
+    const chevGeo = new THREE.ConeGeometry(2.4, 4.8, 4);
+    chevGeo.rotateZ(Math.PI);
+
+    this.tutorialZPositions = [740, 800, 860];
+    this.tutorialGateMeshes = [];
+    this.tutorialZPositions.forEach(() => {
+      const gate = new THREE.Group();
+      const arch = new THREE.Mesh(archGeo, archMat);
+      arch.position.y = 8;
+      const chev = new THREE.Mesh(chevGeo, chevMat);
+      chev.position.y = 13.5;
+      gate.add(arch, chev);
+      this.tutorialGates.add(gate);
+      this.tutorialGateMeshes.push(gate);
+    });
+    this.tutorialGates.visible = false;
+    this.scene.add(this.tutorialGates);
+
     this.riftMat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
@@ -580,6 +724,25 @@ export class World {
       const o = this.cloudOffsets[i];
       c.position.set(p.x + o.x, p.y + o.y, p.z + o.z);
     });
+
+    // Floating Shattered World fragments drifting along the horizon
+    if (this.fragData) {
+      this.fragData.forEach((f) => {
+        f.group.position.x = p.x + f.basePos.x;
+        f.group.position.z = p.z + f.basePos.z;
+        f.group.position.y = f.basePos.y + Math.sin(this.time * 0.8 + f.basePos.x * 0.01) * 6;
+        f.group.rotation.y += dt * f.rotSpeed;
+      });
+    }
+
+    // Holographic Tutorial Gates pulsing animation
+    if (this.isTutorial && this.tutorialGateMeshes) {
+      const pulse = 1.0 + Math.sin(this.time * 4.5) * 0.12;
+      this.tutorialGateMeshes.forEach((g) => {
+        g.scale.set(pulse, pulse, pulse);
+      });
+    }
+
     const az = p.z + 2500;
     this.spire.position.set(this.pathX(az) * 0.4 + 480, this.h(p.x, p.z) - 200, az);
     this.spireRing.rotation.z += dt * 0.15;

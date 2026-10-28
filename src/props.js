@@ -26,6 +26,11 @@ function box(w, h, d, x, y, z, rx = 0, ry = 0, rz = 0) {
   return g;
 }
 
+function mergeSafe(geos) {
+  const normalized = geos.map((g) => (g.index ? g.toNonIndexed() : g));
+  return mergeGeometries(normalized);
+}
+
 // Create a curving spiked thorn vine arch (matches Screenshot 3)
 function buildVineArchGeo() {
   const parts = [];
@@ -54,7 +59,7 @@ function buildVineArchGeo() {
       parts.push(spike);
     }
   }
-  return mergeGeometries(parts);
+  return mergeSafe(parts);
 }
 
 let cache = null;
@@ -62,7 +67,7 @@ let cache = null;
 function buildKits() {
   // ---------- VERDANT (Matches Haste Screenshots 1-5) ----------
   // Multi-branching trunk (like Screenshot 2 right side tree)
-  const trunkGeo = mergeGeometries([
+  const trunkGeo = mergeSafe([
     cyl(0.65, 1.15, 7.5, 7, 0, 3.6, 0, 0.04, -0.05),
     cyl(0.42, 0.65, 5.5, 6, -0.8, 8.8, 0.2, 0.08, 0.35),
     cyl(0.38, 0.58, 5.2, 6, 1.1, 8.5, -0.3, -0.1, -0.42),
@@ -70,7 +75,7 @@ function buildKits() {
   ]);
 
   // Sculpted multi-puff lush canopy (9 overlapping foliage clusters for full volume)
-  const canopyGeo = mergeGeometries([
+  const canopyGeo = mergeSafe([
     blob(4.2, 2, 0, 12.6, 0, 1.15, 0.78, 1.1),
     blob(3.6, 2, -2.9, 11.2, 0.8, 1.1, 0.75, 1.05),
     blob(3.5, 2, 3.1, 11.0, -0.6, 1.1, 0.75, 1.05),
@@ -86,7 +91,7 @@ function buildKits() {
   rockGeo.scale(1.25, 0.62, 0.95);
 
   // Stacked chiseled blue-grey stone monolith obelisk (Screenshot 2 & 5 center-right)
-  const monolithGeo = mergeGeometries([
+  const monolithGeo = mergeSafe([
     box(2.2, 3.2, 2.0, 0, 1.5, 0, 0.03, 0.1, -0.02),
     box(1.95, 3.0, 1.85, 0.06, 4.5, -0.04, -0.02, 0.35, 0.03),
     box(1.7, 2.8, 1.65, -0.04, 7.2, 0.02, 0.02, 0.15, -0.02),
@@ -102,7 +107,7 @@ function buildKits() {
   const vineArchGeo = buildVineArchGeo();
 
   // Grass tuft / wildflower cluster
-  const bushGeo = mergeGeometries([
+  const bushGeo = mergeSafe([
     blob(1.4, 1, 0, 0.65, 0, 1.35, 0.68, 1.15),
     blob(1.0, 1, 1.1, 0.5, 0.4, 1.1, 0.65, 1.0),
   ]);
@@ -188,7 +193,7 @@ function buildKits() {
   ];
 
   // ---------- SCORCHED (Desert Cacti & Mesas) ----------
-  const cactusGeo = mergeGeometries([
+  const cactusGeo = mergeSafe([
     cyl(0.9, 1.05, 16, 8, 0, 8, 0),
     blob(0.9, 1, 0, 16, 0, 1, 0.8, 1),
     cyl(0.55, 0.55, 3.2, 7, 1.9, 7, 0, 0, Math.PI / 2),
@@ -198,11 +203,11 @@ function buildKits() {
     cyl(0.5, 0.5, 4.5, 7, -2.8, 12, 0),
     blob(0.5, 1, -2.8, 14.3, 0, 1, 0.8, 1),
   ]);
-  const smallCactusGeo = mergeGeometries([
+  const smallCactusGeo = mergeSafe([
     cyl(0.5, 0.6, 4, 7, 0, 2, 0),
     blob(0.5, 1, 0, 4, 0),
   ]);
-  const mesaGeo = mergeGeometries([
+  const mesaGeo = mergeSafe([
     cyl(14, 18, 40, 7, 0, 20, 0),
     cyl(10, 14, 16, 7, 0, 48, 0),
   ]);
